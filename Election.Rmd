@@ -8,9 +8,12 @@ output: pdf_document
 ```{r echo=TRUE}
 set.seed(1)
 
+View(results)
+
 # Predictors are separated from vote results join on FIPS
 results = read.csv('CountyLevelResults.csv')
 facts = read.csv('county_facts.csv')
+descriptions = read.csv('county_facts_dictionary.csv')
 
 # Remove statewide information and identifiers from facts leave only data 
 cleaned_facts = data.frame(facts[c(-1, -2, -3)])
@@ -45,6 +48,57 @@ dim(scaled_facts)
 
 
 
-```
 
+###Point Diff Column Calculation
+results$points_diff_rep = ((results$votes_dem - results$votes_gop)/results$total_votes)*-1
+
+
+results$Lean <- cut(results$points_diff_rep, 
+                       breaks = c(-1, -.34, -.12, -.07, -.04, .04, .07, .12, .34, 1), 
+                       labels = c("Solid Democratic", "Likely Democratic", "Lean Democratic", "Tilt Democratic", "Toss-Up", "Tilt GOP", "Lean GOP", "Likely GOP", "Solid GOP"), 
+                       right = FALSE)
+
+
+#########PCA
+prin_comp <- prcomp(scaled_facts, scale. = F)
+
+#compute standard deviation of each principal component
+std_dev <- prin_comp$sdev
+
+#compute variance
+pr_var <- std_dev^2
+
+#check variance of first 10 components
+pr_var[1:length(scaled_facts)]
+
+#proportion of variance explained
+prop_varex <- pr_var/sum(pr_var)
+prop_varex[1:length(scaled_facts)]
+
+#scree plot
+plot(prop_varex, xlab = "Principal Component",
+             ylab = "Proportion of Variance Explained",
+             type = "b")
+
+#cumulative scree plot
+plot(cumsum(prop_varex), xlab = "Principal Component",
+              ylab = "Cumulative Proportion of Variance Explained",
+              type = "b")
+
+
+# COMBINE THE FACTS WITH the LABEL COLUMN USING FIPS
+
+
+autoplot(prin_comp, data = scaled_facts, colour = 'Lean', loadings = TRUE, loadings.colour = 'blue',
+         loadings.label = TRUE, loadings.label.size = 3) +
+  ggtitle("First two PC's using Original Variables")
+
+
+
+
+
+
+
+
+```
 
