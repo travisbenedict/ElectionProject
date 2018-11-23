@@ -164,6 +164,40 @@ merged_lean_counts$pct = merged_lean_counts$count.x / merged_lean_counts$count.y
 
 plot(merged_lean_counts$cluster_id, as.numeric(merged_lean_counts$Lean), cex = 10 * merged_lean_counts$pct, xlab = "Cluster ID", ylab = "Solid Dem to Solid GOP", main = "Percentage of Lean By Cluster")
 
-data.frame(as.numeric(merged_lean_counts$Lean), merged_lean_counts$Lean)
+
+
+# Try clustering just based on pct non hispanic White, pct college degree, per capita income
+expected_trump = scaled_facts[, c("RHI825214", "EDU685213", "INC910213")]
+
+trump_bic = mclustBIC(expected_trump, G=1:20)
+plot(trump_bic)
+
+# Best cluster model is k=8 VVV
+summary(trump_bic)
+
+em_trump_clusts = Mclust(expected_trump, G=8, modelNames = "VVV")
+
+cluster_id_trump = em_trump_clusts$classification
+
+cluster_count_trump = data.frame(cluster_id_trump) %>%
+  group_by(cluster_id_trump) %>%
+  summarise(n = n())
+
+state_cluster_counts_trump = cbind(joined_facts_results[1:3], cluster_id_trump) %>% 
+  group_by(state_abbreviation, cluster_id_trump) %>%
+  summarise(count = n())
+
+Lean_cluster_counts_trump = data.frame(cbind(joined_facts_results[length(joined_facts_results)], cluster_id_trump)) %>% 
+  group_by(Lean, cluster_id_trump) %>%
+  summarise(count = n())
+
+merged_lean_counts_trump = merge(Lean_cluster_counts_trump, Lean_counts, by.x="Lean", by.y="Lean")
+merged_lean_counts_trump$pct = merged_lean_counts_trump$count.x / merged_lean_counts_trump$count.y
+
+plot(merged_lean_counts_trump$cluster_id, as.numeric(merged_lean_counts_trump$Lean), cex = 10 * merged_lean_counts_trump$pct, xlab = "Cluster ID", ylab = "Solid Dem to Solid GOP", main = "% of Lean By Cluster Based on % White, % College Degree, Income")
+
+clPairs(expected_trump, joined_facts_results[,length(joined_facts_results)], lower.panel=NULL)
+clPairsLegend(0, 0.46, class = clp$class,
+col = clp$col, pch = clp$pch)
 ```
 
