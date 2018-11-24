@@ -223,15 +223,16 @@ kFoldCVLogit <- function(y, x, k, columns, link){
     mses = c(mses, mse)
   }
 
-sum(mses) / nrow(x)
+list(mse, fit)
 }
 y = joined_facts_results$GOPDem
 x = scaled_facts
 k = 10
 columns = c("RHI825214", "EDU685213")
 link = "logit"
-kFoldCVLogit(y, x, k, columns, link)
-
+result = kFoldCVLogit(y, x, k, columns, link)
+mse = result[[1]]
+model = result[[2]]
 
 
 
