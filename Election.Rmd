@@ -25,18 +25,13 @@ results$Lean <- cut(results$points_diff_rep,
                        right = FALSE)
 
 # Remove rows without results and identifier columns
-joined_facts_results = merge(facts, results[c("combined_fips", "Lean")], by.x="Fips", by.y="combined_fips")
+joined_facts_results = merge(facts, results[c("combined_fips", "Lean", "points_diff_rep")], by.x="Fips", by.y="combined_fips")
 cleaned_facts = data.frame(joined_facts_results[c(-1, -2, -3, -length(joined_facts_results[1,]))])
 
 scaled_facts = scale(cleaned_facts)
 
 
-# Baseline category logit model without variable selection on entire dataset
-library(VGAM)
-samp <- sample(1:3100, 250)
-logit <- vglm(joined_facts_results$Lean[samp] ~ ., data=data.frame(scaled_facts[samp,]), 
-              family=(multinomial))
-summary(logit)
+
 plot(hclust(dist(scaled_facts[sample(length(scaled_facts[,1]), 100),]), method="complete"), main="Complete Linkage", labels=F)
 plot(hclust(dist(scaled_facts[sample(length(scaled_facts[,1]), 100),]), method="single"), main="Single Linkage",  labels=F)
 plot(hclust(dist(scaled_facts[sample(length(scaled_facts[,1]), 100),]), method="average"), main="Average Linkage",  labels=F)
@@ -201,3 +196,88 @@ clPairsLegend(0, 0.46, class = clp$class,
 col = clp$col, pch = clp$pch)
 ```
 
+# Model Fitting
+```{r, echo=TRUE}
+library(VGAM)
+set.seed(1)
+
+# Fit a logit model with just non hispanic white and college dregree
+joined_facts_results$GOPDem[joined_facts_results$points_diff_rep < 0] <- 0
+joined_facts_results$GOPDem[joined_facts_results$points_diff_rep > 0] <- 1
+
+kFold <- function(x, k) split(sample(1:nrow(x)), cut(seq_along(sample(1:nrow(x))), k, labels = FALSE)) 
+
+kFoldCVLogit <- function(y, x, k, columns, link){
+  folds = kFold(x, k)
+
+  mses = c()
+  for (i in 1:k) {
+    testIndexes = folds[[i]]
+    testData = x[testIndexes, ]
+    trainData = x[-testIndexes, ]
+    
+    fit <- glm(y[-testIndexes] ~ ., data=data.frame(trainData[,columns]), 
+                family=(binomial(link = link)))
+    predicted <- predict(fit, data.frame(testData[,columns]), type="response")
+    mse = sum((y[testIndexes] - predicted)^2)
+    mses = c(mses, mse)
+  }
+
+sum(mses) / nrow(x)
+}
+y = joined_facts_results$GOPDem
+x = scaled_facts
+k = 10
+columns = c("RHI825214", "EDU685213")
+link = "logit"
+kFoldCVLogit(y, x, k, columns, link)
+
+
+
+
+# MAKE NOTE OF SCORING USED FOR CROSS VALIDATION
+
+kFoldCVMultinomial <- function(y, x, k, columns, link){
+  folds = kFold(x, k)
+
+  mses = c()
+  for (i in 1:k) {
+    testIndexes = folds[[i]]
+    testData = x[testIndexes, ]
+    trainData = x[-testIndexes, ]
+    
+    fit <- vglm(y[-testIndexes] ~ ., data=data.frame(trainData[,columns]), 
+                family=(multinomial))
+    predicted <- predict(fit, data.frame(testData[,columns]), type="response")
+    # Calculating the MSE using Brier Score
+    mse = sum((y[testIndexes] - predicted[cbind(seq_along(y[testIndexes]), y[testIndexes])])^2) 
+    
+    mses = c(mses, mse)
+  }
+  
+list(sum(mses) / nrow(x), fit)
+}
+y = as.numeric(joined_facts_results$Lean)
+x = scaled_facts
+k = 10
+columns = c("SBO315207", "EDU685213")
+link = "logit"
+result = kFoldCVMultinomial(y, x, k, columns, link)
+mse = result[[1]]
+model = result[[2]]
+summary(model)
+
+y = as.numeric(joined_facts_results$Lean)
+x = scaled_facts
+k = 10
+columns = c("RHI825214", "EDU685213")
+link = "logit"
+
+samp <- sample(1:3100, 250)
+logit <- vglm(joined_facts_results$Lean[samp] ~ ., data=data.frame(scaled_facts[samp,c("RHI825214", "EDU685213")]), 
+              family=(multinomial))
+
+
+
+
+```
