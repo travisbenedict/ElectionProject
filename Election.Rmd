@@ -279,6 +279,79 @@ logit <- vglm(joined_facts_results$Lean[samp] ~ ., data=data.frame(scaled_facts[
               family=(multinomial))
 
 
+# Perform forward and backward AIC/BIC variable selection
+library(glmnet)
 
+y = joined_facts_results$GOPDem
+x = scaled_facts
+link = "logit"
+fit_full <- glm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes,]), 
+                family=(binomial(link = link)))
+fit_null <- glm(y[-testIndexes] ~ 1, data=data.frame(x[-testIndexes,]), family = binomial(link = "logit"))
+
+# Forward AIC:
+forAIC = step(fit_null,  # Start with NULL model
+               scope = list(lower=fit_null, upper=fit_full), # Range of models
+               direction="forward",
+              trace = FALSE) # Forward or backward
+
+# Backward AIC:
+backAIC = step(fit_full,  # Start with NULL model
+               scope = list(lower=fit_null, upper=fit_full), # Range of models
+               direction="backward",
+              trace = FALSE) # Forward or backward
+summary(backAIC)
+
+# Forward BIC:
+forBIC = step(fit_null,  # Start with NULL model
+               scope = list(lower=fit_null, upper=fit_full), # Range of models
+               direction="forward",
+              k = log(length(y)),
+              trace = FALSE) # Forward or backward
+
+# Forward BIC:
+backBIC = step(fit_full,  # Start with NULL model
+               scope = list(lower=fit_null, upper=fit_full), # Range of models
+               direction="backward",
+              k = log(length(y)),
+              trace = FALSE) # Forward or backward
+summary(backBIC)
+
+# Forward Backward AIC/BIC for probit
+link = "probit"
+fit_full <- glm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes,]), 
+                family=(binomial(link = link)))
+fit_null <- glm(y[-testIndexes] ~ 1, data=data.frame(x[-testIndexes,]), family = binomial(link = "logit"))
+
+# Forward AIC:
+forAIC = step(fit_null,  # Start with NULL model
+               scope = list(lower=fit_null, upper=fit_full), # Range of models
+               direction="forward",
+              trace = FALSE) # Forward or backward
+
+# Backward AIC:
+backAIC = step(fit_full,  # Start with NULL model
+               scope = list(lower=fit_null, upper=fit_full), # Range of models
+               direction="backward",
+              trace = FALSE) # Forward or backward
+summary(backAIC)
+
+# Forward BIC:
+forBIC = step(fit_null,  # Start with NULL model
+               scope = list(lower=fit_null, upper=fit_full), # Range of models
+               direction="forward",
+              k = log(length(y)),
+              trace = FALSE) # Forward or backward
+
+# Forward BIC:
+backBIC = step(fit_full,  # Start with NULL model
+               scope = list(lower=fit_null, upper=fit_full), # Range of models
+               direction="backward",
+              k = log(length(y)),
+              trace = FALSE) # Forward or backward
+summary(backBIC)
+
+
+# Take each of these models and perform 10 Fold CV compare to our Baseline model of White and Education
 
 ```
