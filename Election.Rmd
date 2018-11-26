@@ -4,11 +4,34 @@ author: "Travis Benedict"
 date: "October 30, 2018"
 output: pdf_document
 ---
+```{r echo=TRUE}
+library(magrittr)
+library(dplyr)
+library(mclust)
+library(VGAM)
+library(mapproj)
+library(ggmap)
+#library(DeducerSpatial)
+library(ggplot2)
+library(maps)
+library(mapdata)
+
+
+#install.packages('JavaGD')
+
+#Packages you made to @Travis
+#install.packages("mapproj")
+#install.packages("DeducerSpatial")
+```
+
 
 ```{r echo=TRUE}
 set.seed(1)
 
 View(results)
+View(facts)
+View(joined_facts_results)
+View(descriptions)
 
 # Predictors are separated from vote results join on FIPS
 results = read.csv('CountyLevelResults.csv')
@@ -23,16 +46,16 @@ results$Lean <- cut(results$points_diff_rep,
                        breaks = c(-1, -.34, -.12, -.07, -.04, .04, .07, .12, .34, 1), 
                        labels = c("Solid Democratic", "Likely Democratic", "Lean Democratic", "Tilt Democratic", "Toss-Up", "Tilt GOP", "Lean GOP", "Likely GOP", "Solid GOP"), 
                        right = FALSE)
+results$Lean_Number <- as.numeric(results$Lean)
 
 # Remove rows without results and identifier columns
-joined_facts_results = merge(facts, results[c("combined_fips", "Lean")], by.x="Fips", by.y="combined_fips")
+joined_facts_results = merge(facts, results[c("combined_fips", "Lean", "Lean_Number")], by.x="Fips", by.y="combined_fips")
 cleaned_facts = data.frame(joined_facts_results[c(-1, -2, -3, -length(joined_facts_results[1,]))])
 
 scaled_facts = scale(cleaned_facts)
 
 
 # Baseline category logit model without variable selection on entire dataset
-library(VGAM)
 samp <- sample(1:3100, 250)
 logit <- vglm(joined_facts_results$Lean[samp] ~ ., data=data.frame(scaled_facts[samp,]), 
               family=(multinomial))
@@ -87,9 +110,7 @@ pc_data <- prin_comp$x[,1:17]
 
 plot(hclust(dist(pc_data[sample(length(pc_data[,1]), 250),]), method="complete"), main="Complete Linkage", labels=F)
 
-library(magrittr)
-library(dplyr)
-library(mclust)
+
 
 c_pc = mclustBIC(pc_data, G=1:20)
 plot(c_pc)
@@ -167,7 +188,7 @@ plot(merged_lean_counts$cluster_id, as.numeric(merged_lean_counts$Lean), cex = 1
 
 
 # Try clustering just based on pct non hispanic White, pct college degree, per capita income
-expected_trump = scaled_facts[, c("RHI825214", "EDU685213", "INC910213")]
+expected_trump = scaled_facts[, c("RHI825214", "EDU685213", "INC910213")] 
 
 trump_bic = mclustBIC(expected_trump, G=1:20)
 plot(trump_bic)
@@ -199,5 +220,148 @@ plot(merged_lean_counts_trump$cluster_id, as.numeric(merged_lean_counts_trump$Le
 clPairs(expected_trump, joined_facts_results[,length(joined_facts_results)], lower.panel=NULL)
 clPairsLegend(0, 0.46, class = clp$class,
 col = clp$col, pch = clp$pch)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ```
+
+
+```{r echo=TRUE}
+
+
+
+
+
+###Political Lean by County (State and County Outline)
+colors = c("#0000ff", "#2020df", "#4040bf", "#60609f", "#808080", "#9f6060", "#bf4040", "#df2020", "#ff0000")
+
+colorsmatched <- joined_facts_results$Lean_Number[match(county.fips$fips, joined_facts_results$Fips)]
+
+
+
+map("county", col = colors[colorsmatched], fill = TRUE, resolution = 0, 
+    lty = 0, projection = "polyconic")
+
+# Add border around each State
+map("county", col = "white", fill = FALSE, add = TRUE, lty = 1, lwd = .3, 
+    projection = "polyconic")
+map("state", col = "white", fill = FALSE, add = TRUE, lty = 1, lwd = .8, 
+    projection = "polyconic")
+title("Political Lean")
+
+leg.txt <- c("Solid Democratic", "Likely Democratic", "Lean Democratic", "Tilt Democratic", "Toss-Up", "Tilt GOP", "Lean GOP", "Likely GOP", "Solid GOP")
+legend("top", leg.txt, horiz = TRUE, fill = colors, cex=.35)
+
+
+###Political Lean by County (State and County Outline)
+# usa <- map_data("usa")
+# states <- map_data("state")
+# county <- map_data("county")
+# 
+# 
+# ggplot(data = county) + 
+#   geom_polygon(aes(x = long, y = lat, fill = region, group = group), color = "white") + 
+#   coord_fixed(1.3) +
+#   guides(fill=FALSE)  # do this to leave off the color legend
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# map("county", fill = TRUE, resolution = 0, 
+#     lty = 0, projection = "polyconic") + scale_fill_gradient(trans = "log10")
+# 
+# 
+# 
+# # counties <- map_data("county")
+# # USA_counties <- ggplot(data = counties, mapping = aes(x = long, y = lat, group = group)) + 
+# #   coord_fixed(1.3) + 
+# #   geom_polygon(color = "black", fill = "gray")
+# # 
+# # USA_counties + geom_polygon(data = cleaned_facts, aes(fill = RHI825214), color = "white")
+# # 
+# # cleaned_facts %>%
+# #   ggplot(aes(long, lat, group = group, fill = RHI825214)) +
+# #   geom_polygon(color = NA) +
+# #   coord_map(projection = "albers", lat0 = 39, lat1 = 45) +
+# #   labs(fill = "Median Household Income")
+# # 
+# # 
+# # cleaned_facts %>%
+# #   ggplot(aes(long, lat, group = group, fill = RHI825214)) +
+# #   geom_polygon(color = NA) +
+# #   scale_fill_gradientn(labels = scales::percent,
+# #                        guide = guide_colorbar(title.position = "top")) +
+# #   geom_polygon(data = states, mapping = aes(long, lat, group = group),
+# #                fill = NA, color = "#ffffff") +
+# #   coord_map(projection = "albers", lat0 = 39, lat1 = 45) +
+# #   theme(legend.title = element_text(),
+# #         legend.key.width = unit(.5, "in")) +
+# #   labs(fill = "Homeownership rate") +
+# #   theme_urban_map()
+# # 
+# # df1 <- joined_facts_results %>% select(subregion=County, region=State, B20004001 )
+# # 
+# # 
+# # ggplot(cleaned_facts, aes(long, lat,group = group)) + 
+# #   geom_polygon(aes(fill = RHI825214), colour = rgb(1,1,1,0.2))  +
+# #   coord_quickmap()
+
+
+
+##Install These Packages
+install.packages(c("choroplethr", "choroplethrMaps")) 
+library(choroplethr)
+library(choroplethrMaps)
+
+#Demographic Maps
+FIPS_White <- joined_facts_results %>% select(region=Fips, value=RHI825214)
+county_choropleth(FIPS_White,
+                  title ="2016 County Percent Non-Hispanic White", 
+                 legend = "Percent Non-Hispanic White")
+
+FIPS_College_Degree <- joined_facts_results %>% select(region=Fips, value=EDU685213)
+county_choropleth(FIPS_College_Degree,
+                  title ="2016 County Percent College Degree", 
+                 legend = "Percent College Degree")
+
+FIPS_PCI <- joined_facts_results %>% select(region=Fips, value=INC910213)
+county_choropleth(FIPS_PCI,
+                  title ="2016 County Per Capita Income", 
+                 legend = "Per Capita Income")
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
 
