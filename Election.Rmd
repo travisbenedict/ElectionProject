@@ -11,23 +11,20 @@ library(mclust)
 library(VGAM)
 library(mapproj)
 library(ggmap)
-#library(DeducerSpatial)
 library(ggplot2)
 library(maps)
 library(mapdata)
+library(choroplethr)
+library(choroplethrMaps)
 
 
-#install.packages('JavaGD')
-
-#Packages you made to @Travis
-#install.packages("mapproj")
-#install.packages("DeducerSpatial")
+#Packages you made to Install
+# install.packages(c("choroplethr", "choroplethrMaps")) 
 ```
 
 
+#Format Data
 ```{r echo=TRUE}
-set.seed(1)
-
 View(results)
 View(facts)
 View(joined_facts_results)
@@ -42,30 +39,52 @@ descriptions = read.csv('county_facts_dictionary.csv')
 results$points_diff_rep = ((results$votes_dem - results$votes_gop)/results$total_votes)*-1
 
 
+###Lean Calculation
 results$Lean <- cut(results$points_diff_rep, 
                        breaks = c(-1, -.34, -.12, -.07, -.04, .04, .07, .12, .34, 1), 
                        labels = c("Solid Democratic", "Likely Democratic", "Lean Democratic", "Tilt Democratic", "Toss-Up", "Tilt GOP", "Lean GOP", "Likely GOP", "Solid GOP"), 
                        right = FALSE)
 results$Lean_Number <- as.numeric(results$Lean)
 
+
+###Winner Calculation
+results$Winner <- cut(results$points_diff_rep, 
+                       breaks = c(-1, 0, 1), 
+                       labels = c("Democratic", "Republican"), 
+                       right = FALSE)
+results$Winner_Number <- as.numeric(results$Winner)
+
 # Remove rows without results and identifier columns
-joined_facts_results = merge(facts, results[c("combined_fips", "Lean", "Lean_Number")], by.x="Fips", by.y="combined_fips")
-cleaned_facts = data.frame(joined_facts_results[c(-1, -2, -3, -length(joined_facts_results[1,]))])
+
+joined_facts_results = merge(facts, results[c("combined_fips", "Lean", "Lean_Number", "points_diff_rep", "Winner", "Winner_Number")], by.x="Fips", by.y="combined_fips")
+head(joined_facts_results)
+
+cleaned_facts = data.frame(joined_facts_results[c(-1, -2, -3, -length(joined_facts_results[1,]), -(length(joined_facts_results[1,])-1), -(length(joined_facts_results[1,])-2), -(length(joined_facts_results[1,])-3), -(length(joined_facts_results[1,])-4), -(length(joined_facts_results[1,])-5), -(length(joined_facts_results[1,])-6))])
 
 scaled_facts = scale(cleaned_facts)
+```
 
+
+#Baseline Logit Model
+```{r echo=TRUE}
+set.seed(1)
 
 # Baseline category logit model without variable selection on entire dataset
 samp <- sample(1:3100, 250)
 logit <- vglm(joined_facts_results$Lean[samp] ~ ., data=data.frame(scaled_facts[samp,]), 
               family=(multinomial))
-summary(logit)
+
+#summary(logit)
+
+
 plot(hclust(dist(scaled_facts[sample(length(scaled_facts[,1]), 100),]), method="complete"), main="Complete Linkage", labels=F)
 plot(hclust(dist(scaled_facts[sample(length(scaled_facts[,1]), 100),]), method="single"), main="Single Linkage",  labels=F)
 plot(hclust(dist(scaled_facts[sample(length(scaled_facts[,1]), 100),]), method="average"), main="Average Linkage",  labels=F)
+```
 
 
-
+#Principal Component Analysis and Clustering
+```{r echo=TRUE}
 #########PCA
 prin_comp <- prcomp(scaled_facts, scale. = F)
 
@@ -98,8 +117,6 @@ abline(v=17)
 
 
 # COMBINE THE FACTS WITH the LABEL COLUMN USING FIPS
-
-
 autoplot(prin_comp, data = scaled_facts, colour = 'Lean', loadings = TRUE, loadings.colour = 'blue',
          loadings.label = TRUE, loadings.label.size = 3) +
   ggtitle("First two PC's using Original Variables")
@@ -220,54 +237,62 @@ plot(merged_lean_counts_trump$cluster_id, as.numeric(merged_lean_counts_trump$Le
 clPairs(expected_trump, joined_facts_results[,length(joined_facts_results)], lower.panel=NULL)
 clPairsLegend(0, 0.46, class = clp$class,
 col = clp$col, pch = clp$pch)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ```
 
 
+#Maps
 ```{r echo=TRUE}
-
-
-
-
-
 ###Political Lean by County (State and County Outline)
 colors = c("#0000ff", "#2020df", "#4040bf", "#60609f", "#808080", "#9f6060", "#bf4040", "#df2020", "#ff0000")
-
 colorsmatched <- joined_facts_results$Lean_Number[match(county.fips$fips, joined_facts_results$Fips)]
-
-
 
 map("county", col = colors[colorsmatched], fill = TRUE, resolution = 0, 
     lty = 0, projection = "polyconic")
-
 # Add border around each State
 map("county", col = "white", fill = FALSE, add = TRUE, lty = 1, lwd = .3, 
     projection = "polyconic")
 map("state", col = "white", fill = FALSE, add = TRUE, lty = 1, lwd = .8, 
     projection = "polyconic")
 title("Political Lean")
-
 leg.txt <- c("Solid Democratic", "Likely Democratic", "Lean Democratic", "Tilt Democratic", "Toss-Up", "Tilt GOP", "Lean GOP", "Likely GOP", "Solid GOP")
 legend("top", leg.txt, horiz = TRUE, fill = colors, cex=.35)
+
+
+###Winner by County (State and County Outline)
+colors = c("#0000ff", "#ff0000")
+colorsmatched <- joined_facts_results$Winner_Number[match(county.fips$fips, joined_facts_results$Fips)+1]
+
+map("county", col = colors[colorsmatched], fill = TRUE, resolution = 0, 
+    lty = 0, projection = "polyconic")
+# Add border around each State
+map("county", col = "white", fill = FALSE, add = TRUE, lty = 1, lwd = .3, 
+    projection = "polyconic")
+map("state", col = "white", fill = FALSE, add = TRUE, lty = 1, lwd = .8, 
+    projection = "polyconic")
+title("Political Lean")
+leg.txt <- c("Democratic", "Republican")
+legend("top", leg.txt, horiz = TRUE, fill = colors, cex=.5)
+
+
+#Demographic Maps
+
+#Percent Non-Hispanic White
+FIPS_White <- joined_facts_results %>% select(region=Fips, value=RHI825214)
+county_choropleth(FIPS_White,
+                  title ="2016 County Percent Non-Hispanic White", 
+                 legend = "Percent Non-Hispanic White")
+
+#Percent College Degree
+FIPS_College_Degree <- joined_facts_results %>% select(region=Fips, value=EDU685213)
+county_choropleth(FIPS_College_Degree,
+                  title ="2016 County Percent College Degree", 
+                 legend = "Percent College Degree")
+
+#Per Capita Income
+FIPS_PCI <- joined_facts_results %>% select(region=Fips, value=INC910213)
+county_choropleth(FIPS_PCI,
+                  title ="2016 County Per Capita Income", 
+                 legend = "Per Capita Income")
 
 
 ###Political Lean by County (State and County Outline)
@@ -327,41 +352,166 @@ legend("top", leg.txt, horiz = TRUE, fill = colors, cex=.35)
 # #   geom_polygon(aes(fill = RHI825214), colour = rgb(1,1,1,0.2))  +
 # #   coord_quickmap()
 
-
-
-##Install These Packages
-install.packages(c("choroplethr", "choroplethrMaps")) 
-library(choroplethr)
-library(choroplethrMaps)
-
-#Demographic Maps
-FIPS_White <- joined_facts_results %>% select(region=Fips, value=RHI825214)
-county_choropleth(FIPS_White,
-                  title ="2016 County Percent Non-Hispanic White", 
-                 legend = "Percent Non-Hispanic White")
-
-FIPS_College_Degree <- joined_facts_results %>% select(region=Fips, value=EDU685213)
-county_choropleth(FIPS_College_Degree,
-                  title ="2016 County Percent College Degree", 
-                 legend = "Percent College Degree")
-
-FIPS_PCI <- joined_facts_results %>% select(region=Fips, value=INC910213)
-county_choropleth(FIPS_PCI,
-                  title ="2016 County Per Capita Income", 
-                 legend = "Per Capita Income")
-
-
 ```
 
 
 
+# Model Fitting
+```{r, echo=TRUE}
+library(VGAM)
+set.seed(1)
+
+# Fit a logit model with just non hispanic white and college dregree
+joined_facts_results$GOPDem[joined_facts_results$points_diff_rep < 0] <- 0
+joined_facts_results$GOPDem[joined_facts_results$points_diff_rep > 0] <- 1
+
+kFold <- function(x, k) split(sample(1:nrow(x)), cut(seq_along(sample(1:nrow(x))), k, labels = FALSE)) 
+
+kFoldCVLogit <- function(y, x, k, columns, link){
+  folds = kFold(x, k)
+
+  mses = c()
+  for (i in 1:k) {
+    testIndexes = folds[[i]]
+    testData = x[testIndexes, ]
+    trainData = x[-testIndexes, ]
+    
+    fit <- glm(y[-testIndexes] ~ ., data=data.frame(trainData[,columns]), 
+                family=(binomial(link = link)))
+    predicted <- predict(fit, data.frame(testData[,columns]), type="response")
+    mse = sum((y[testIndexes] - predicted)^2)
+    mses = c(mses, mse)
+  }
+
+list(mse, fit)
+}
+y = joined_facts_results$GOPDem
+x = scaled_facts
+k = 10
+columns = c("RHI825214", "EDU685213")
+link = "logit"
+result = kFoldCVLogit(y, x, k, columns, link)
+mse = result[[1]]
+model = result[[2]]
 
 
 
+# MAKE NOTE OF SCORING USED FOR CROSS VALIDATION
+
+kFoldCVMultinomial <- function(y, x, k, columns, link){
+  folds = kFold(x, k)
+
+  mses = c()
+  for (i in 1:k) {
+    testIndexes = folds[[i]]
+    testData = x[testIndexes, ]
+    trainData = x[-testIndexes, ]
+    
+    fit <- vglm(y[-testIndexes] ~ ., data=data.frame(trainData[,columns]), 
+                family=(multinomial))
+    predicted <- predict(fit, data.frame(testData[,columns]), type="response")
+    # Calculating the MSE using Brier Score
+    mse = sum((y[testIndexes] - predicted[cbind(seq_along(y[testIndexes]), y[testIndexes])])^2) 
+    
+    mses = c(mses, mse)
+  }
+  
+list(sum(mses) / nrow(x), fit)
+}
+y = as.numeric(joined_facts_results$Lean)
+x = scaled_facts
+k = 10
+columns = c("SBO315207", "EDU685213")
+link = "logit"
+result = kFoldCVMultinomial(y, x, k, columns, link)
+mse = result[[1]]
+model = result[[2]]
+summary(model)
+
+y = as.numeric(joined_facts_results$Lean)
+x = scaled_facts
+k = 10
+columns = c("RHI825214", "EDU685213")
+link = "logit"
+
+samp <- sample(1:3100, 250)
+logit <- vglm(joined_facts_results$Lean[samp] ~ ., data=data.frame(scaled_facts[samp,c("RHI825214", "EDU685213")]), 
+              family=(multinomial))
 
 
+# Perform forward and backward AIC/BIC variable selection
+library(glmnet)
+
+y = joined_facts_results$GOPDem
+x = scaled_facts
+link = "logit"
+fit_full <- glm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes,]), 
+                family=(binomial(link = link)))
+fit_null <- glm(y[-testIndexes] ~ 1, data=data.frame(x[-testIndexes,]), family = binomial(link = "logit"))
+
+# Forward AIC:
+forAIC = step(fit_null,  # Start with NULL model
+               scope = list(lower=fit_null, upper=fit_full), # Range of models
+               direction="forward",
+              trace = FALSE) # Forward or backward
+
+# Backward AIC:
+backAIC = step(fit_full,  # Start with NULL model
+               scope = list(lower=fit_null, upper=fit_full), # Range of models
+               direction="backward",
+              trace = FALSE) # Forward or backward
+summary(backAIC)
+
+# Forward BIC:
+forBIC = step(fit_null,  # Start with NULL model
+               scope = list(lower=fit_null, upper=fit_full), # Range of models
+               direction="forward",
+              k = log(length(y)),
+              trace = FALSE) # Forward or backward
+
+# Forward BIC:
+backBIC = step(fit_full,  # Start with NULL model
+               scope = list(lower=fit_null, upper=fit_full), # Range of models
+               direction="backward",
+              k = log(length(y)),
+              trace = FALSE) # Forward or backward
+summary(backBIC)
+
+# Forward Backward AIC/BIC for probit
+link = "probit"
+fit_full <- glm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes,]), 
+                family=(binomial(link = link)))
+fit_null <- glm(y[-testIndexes] ~ 1, data=data.frame(x[-testIndexes,]), family = binomial(link = "logit"))
+
+# Forward AIC:
+forAIC = step(fit_null,  # Start with NULL model
+               scope = list(lower=fit_null, upper=fit_full), # Range of models
+               direction="forward",
+              trace = FALSE) # Forward or backward
+
+# Backward AIC:
+backAIC = step(fit_full,  # Start with NULL model
+               scope = list(lower=fit_null, upper=fit_full), # Range of models
+               direction="backward",
+              trace = FALSE) # Forward or backward
+summary(backAIC)
+
+# Forward BIC:
+forBIC = step(fit_null,  # Start with NULL model
+               scope = list(lower=fit_null, upper=fit_full), # Range of models
+               direction="forward",
+              k = log(length(y)),
+              trace = FALSE) # Forward or backward
+
+# Forward BIC:
+backBIC = step(fit_full,  # Start with NULL model
+               scope = list(lower=fit_null, upper=fit_full), # Range of models
+               direction="backward",
+              k = log(length(y)),
+              trace = FALSE) # Forward or backward
+summary(backBIC)
 
 
+# Take each of these models and perform 10 Fold CV compare to our Baseline model of White and Education
 
-
-
+```
