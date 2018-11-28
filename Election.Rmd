@@ -17,6 +17,9 @@ library(mapdata)
 library(choroplethr)
 library(choroplethrMaps)
 library(glmnet)
+library(ROCR)
+library(pROC)
+library(mlbench)
 
 
 #Packages you made to Install
@@ -516,12 +519,8 @@ summary(backBIC)
 ```
 
 
-
+#Laso, Confusion Matrix, and ROC Curve
 ```{r, echo=TRUE}
-#load required library
-library(mlbench)
-
-#set seed to ensure reproducible results
 set.seed(1)
 
 #Prepare Data
@@ -568,8 +567,6 @@ mean(glm_predict==testset$GOPDem)
 
 
 ########Laso#########
-#load required library
-library(glmnet)
 
 #Create X&Y Variables (for X, convert training data to matrix format)
 x <- model.matrix(GOPDem~.,trainset)
@@ -581,26 +578,35 @@ cv.out <- cv.glmnet(x,y,alpha=1,family="binomial",type.measure = "mse" )
 #plot result
 plot(cv.out)
 
-#min value of lambda
+#Min value of lambda (Just interesting to compare to best value of Lambda)
 lambda_min <- cv.out$lambda.min
-#best value of lambda
+#Best value of lambda
 lambda_1se <- cv.out$lambda.1se
 
 
-#regression coefficients
+#Regression coefficients
 coef(cv.out,s=lambda_1se)
 
-#get test data
+#Get test data
 x_test <- model.matrix(GOPDem~.,testset)
-#predict class, type=”class”
+#Predict class, type=”class”
 lasso_prob <- predict(cv.out,newx = x_test,s=lambda_1se,type="response")
-#translate probabilities to predictions
+#Translate probabilities to predictions
 lasso_predict <- rep("0",nrow(testset))
 lasso_predict[lasso_prob>.5] <- "1"
-#confusion matrix
+
+#Confusion matrix
 table(pred=lasso_predict,true=testset$GOPDem)
 
-#accuracy
+#Accuracy
 mean(lasso_predict==testset$GOPDem)
 
+
+######### ROC ##########
+#Load probabilities into testset data
+testset$prob = glm_prob
+
+#Plot ROC Curve
+plot.roc(GOPDem ~ prob, data = testset,smooth=TRUE,add=FALSE, reuse.auc=TRUE,
+axes=TRUE, legacy.axes=FALSE)
 ```
