@@ -1,0 +1,135 @@
+---
+title: "541Project"
+author: "Travis Benedict"
+date: "November 29, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+#Clustering 541 Only
+```{r, echo =TRUE}
+plot(hclust(dist(scaled_facts[sample(length(scaled_facts[,1]), 100),]), method="complete"), main="Complete Linkage", labels=F)
+plot(hclust(dist(scaled_facts[sample(length(scaled_facts[,1]), 100),]), method="single"), main="Single Linkage",  labels=F)
+plot(hclust(dist(scaled_facts[sample(length(scaled_facts[,1]), 100),]), method="average"), main="Average Linkage",  labels=F)
+plot(hclust(dist(pc_data[sample(length(pc_data[,1]), 250),]), method="complete"), main="Complete Linkage", labels=F)
+
+
+
+c_pc = mclustBIC(pc_data, G=1:20)
+plot(c_pc)
+
+# Best cluster model is k=10 VVV
+summary(c_pc)
+
+em_clusters_pc = Mclust(pc_data, G=10, modelNames = "VVV")
+
+# Possibly compare the EM results to kmeans with k=10
+
+cluster_id_pc = em_clusters_pc$classification
+
+cluster_count_pc = data.frame(cluster_id_pc) %>%
+  group_by(cluster_id_pc) %>%
+  summarise(n = n())
+
+state_cluster_counts_pc = cbind(joined_facts_results[1:3], cluster_id_pc) %>% 
+  group_by(state_abbreviation, cluster_id_pc) %>%
+  summarise(count = n())
+
+Lean_cluster_counts_pc = data.frame(cbind(joined_facts_results[length(joined_facts_results)], cluster_id_pc)) %>% 
+  group_by(Lean, cluster_id_pc) %>%
+  summarise(count = n())
+
+View(Lean_cluster_counts_pc)
+
+plot(jitter(cluster_id_pc), jitter(as.numeric(joined_facts_results$Lean)))
+
+Lean_counts = joined_facts_results[length(joined_facts_results)] %>%
+  group_by(Lean) %>%
+  summarise(count = n())
+
+merged_lean_counts_pc = merge(Lean_cluster_counts_pc, Lean_counts, by.x="Lean", by.y="Lean")
+merged_lean_counts_pc$pct = merged_lean_counts_pc$count.x / merged_lean_counts_pc$count.y
+
+plot(merged_lean_counts_pc$cluster_id, as.numeric(merged_lean_counts_pc$Lean), cex = 10 * merged_lean_counts_pc$pct, xlab = "Cluster ID", ylab = "Solid Dem to Solid GOP", main = "Percentage of Lean By Cluster Based on First 17 Pcs")
+
+
+# Try clustering with scaled data instead of pc
+c = mclustBIC(scaled_facts, G=5:15)
+plot(c)
+
+# Best cluster model is k=7 VEV
+summary(c)
+
+em_clusters = Mclust(scaled_facts, G=7, modelNames = "VEV")
+
+# Possibly compare the EM results to kmeans with k=10
+
+cluster_id = em_clusters$classification
+
+cluster_count = data.frame(cluster_id) %>%
+  group_by(cluster_id) %>%
+  summarise(n = n())
+
+state_cluster_counts = cbind(joined_facts_results[1:3], cluster_id) %>% 
+  group_by(state_abbreviation, cluster_id) %>%
+  summarise(count = n())
+
+Lean_cluster_counts = data.frame(cbind(joined_facts_results[length(joined_facts_results)], cluster_id)) %>% 
+  group_by(Lean, cluster_id) %>%
+  summarise(count = n())
+
+View(Lean_cluster_counts)
+
+# Note that there are many more Solid GOP than Solid Dem counties
+plot(jitter(cluster_id), jitter(as.numeric(joined_facts_results$Lean)))
+
+merged_lean_counts = merge(Lean_cluster_counts, Lean_counts, by.x="Lean", by.y="Lean")
+merged_lean_counts$pct = merged_lean_counts$count.x / merged_lean_counts$count.y
+
+plot(merged_lean_counts$cluster_id, as.numeric(merged_lean_counts$Lean), cex = 10 * merged_lean_counts$pct, xlab = "Cluster ID", ylab = "Solid Dem to Solid GOP", main = "Percentage of Lean By Cluster")
+
+
+
+# Try clustering just based on pct non hispanic White, pct college degree, per capita income
+expected_trump = scaled_facts[, c("RHI825214", "EDU685213", "INC910213")] 
+
+trump_bic = mclustBIC(expected_trump, G=1:20)
+plot(trump_bic)
+
+# Best cluster model is k=8 VVV
+summary(trump_bic)
+
+em_trump_clusts = Mclust(expected_trump, G=8, modelNames = "VVV")
+
+cluster_id_trump = em_trump_clusts$classification
+
+cluster_count_trump = data.frame(cluster_id_trump) %>%
+  group_by(cluster_id_trump) %>%
+  summarise(n = n())
+
+state_cluster_counts_trump = cbind(joined_facts_results[1:3], cluster_id_trump) %>% 
+  group_by(state_abbreviation, cluster_id_trump) %>%
+  summarise(count = n())
+
+Lean_cluster_counts_trump = data.frame(cbind(joined_facts_results[length(joined_facts_results)], cluster_id_trump)) %>% 
+  group_by(Lean, cluster_id_trump) %>%
+  summarise(count = n())
+
+merged_lean_counts_trump = merge(Lean_cluster_counts_trump, Lean_counts, by.x="Lean", by.y="Lean")
+merged_lean_counts_trump$pct = merged_lean_counts_trump$count.x / merged_lean_counts_trump$count.y
+
+plot(merged_lean_counts_trump$cluster_id, as.numeric(merged_lean_counts_trump$Lean), cex = 10 * merged_lean_counts_trump$pct, xlab = "Cluster ID", ylab = "Solid Dem to Solid GOP", main = "% of Lean By Cluster Based on % White, % College Degree, Income")
+
+clPairs(expected_trump, joined_facts_results[,length(joined_facts_results)], lower.panel=NULL)
+clPairsLegend(0, 0.46, class = clp$class,
+col = clp$col, pch = clp$pch)
+```

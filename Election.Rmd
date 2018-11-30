@@ -21,18 +21,12 @@ library(ROCR)
 library(pROC)
 library(mlbench)
 
-
-#Packages you made to Install
-# install.packages(c("choroplethr", "choroplethrMaps")) 
+set.seed(1)
 ```
 
 
 #Format Data
 ```{r echo=TRUE}
-View(results)
-View(facts)
-View(joined_facts_results)
-View(descriptions)
 
 # Predictors are separated from vote results join on FIPS
 results = read.csv('CountyLevelResults.csv')
@@ -69,180 +63,16 @@ scaled_facts = scale(cleaned_facts)
 ```
 
 
-#Baseline Logit Model
-```{r echo=TRUE}
-set.seed(1)
+# Exploratory Data Visualizations
+```{r, echo=TRUE}
 
-# Baseline category logit model without variable selection on entire dataset
-samp <- sample(1:3100, 250)
-logit <- vglm(joined_facts_results$Lean[samp] ~ ., data=data.frame(scaled_facts[samp,]), 
-              family=(multinomial))
+ggplot(cleaned_facts, aes(x=log10(PST045214))) + geom_histogram() + ggtitle("County Population") + scale_x_continuous(name="log10 Population") + scale_y_continuous(name="Count")
 
-#summary(logit)
+ggplot(cleaned_facts, aes(x=RHI125214)) + geom_histogram() + ggtitle("Percentage of White Population by County") + scale_x_continuous(name="Percent") + scale_y_continuous(name="Count")
 
+ggplot(cleaned_facts, aes(x=EDU685213)) + geom_histogram() + ggtitle("Percentage of People 25+ with Bachelor's Degrees or Higher") + scale_x_continuous(name="Percent") + scale_y_continuous(name="Count")
 
-plot(hclust(dist(scaled_facts[sample(length(scaled_facts[,1]), 100),]), method="complete"), main="Complete Linkage", labels=F)
-plot(hclust(dist(scaled_facts[sample(length(scaled_facts[,1]), 100),]), method="single"), main="Single Linkage",  labels=F)
-plot(hclust(dist(scaled_facts[sample(length(scaled_facts[,1]), 100),]), method="average"), main="Average Linkage",  labels=F)
 ```
-
-
-#Principal Component Analysis and Clustering
-```{r echo=TRUE}
-#########PCA
-prin_comp <- prcomp(scaled_facts, scale. = F)
-
-summary(prin_comp)
-
-#compute standard deviation of each principal component
-std_dev <- prin_comp$sdev
-
-#compute variance
-pr_var <- std_dev^2
-
-#check variance of first 10 components
-pr_var[1:length(scaled_facts)]
-
-#proportion of variance explained
-prop_varex <- pr_var/sum(pr_var)
-prop_varex[1:length(scaled_facts)]
-
-#scree plot
-plot(prop_varex, xlab = "Principal Component",
-             ylab = "Proportion of Variance Explained",
-             type = "b")
-
-#cumulative scree plot
-plot(cumsum(prop_varex), xlab = "Principal Component",
-              ylab = "Cumulative Proportion of Variance Explained",
-              type = "b")
-abline(h=0.9)
-abline(v=17)
-
-
-# COMBINE THE FACTS WITH the LABEL COLUMN USING FIPS
-autoplot(prin_comp, data = scaled_facts, colour = 'Lean', loadings = TRUE, loadings.colour = 'blue',
-         loadings.label = TRUE, loadings.label.size = 3) +
-  ggtitle("First two PC's using Original Variables")
-
-
-# Data from first 17 principal components
-pc_data <- prin_comp$x[,1:17]
-
-plot(hclust(dist(pc_data[sample(length(pc_data[,1]), 250),]), method="complete"), main="Complete Linkage", labels=F)
-
-
-
-c_pc = mclustBIC(pc_data, G=1:20)
-plot(c_pc)
-
-# Best cluster model is k=10 VVV
-summary(c_pc)
-
-em_clusters_pc = Mclust(pc_data, G=10, modelNames = "VVV")
-
-# Possibly compare the EM results to kmeans with k=10
-
-cluster_id_pc = em_clusters_pc$classification
-
-cluster_count_pc = data.frame(cluster_id_pc) %>%
-  group_by(cluster_id_pc) %>%
-  summarise(n = n())
-
-state_cluster_counts_pc = cbind(joined_facts_results[1:3], cluster_id_pc) %>% 
-  group_by(state_abbreviation, cluster_id_pc) %>%
-  summarise(count = n())
-
-Lean_cluster_counts_pc = data.frame(cbind(joined_facts_results[length(joined_facts_results)], cluster_id_pc)) %>% 
-  group_by(Lean, cluster_id_pc) %>%
-  summarise(count = n())
-
-View(Lean_cluster_counts_pc)
-
-plot(jitter(cluster_id_pc), jitter(as.numeric(joined_facts_results$Lean)))
-
-Lean_counts = joined_facts_results[length(joined_facts_results)] %>%
-  group_by(Lean) %>%
-  summarise(count = n())
-
-merged_lean_counts_pc = merge(Lean_cluster_counts_pc, Lean_counts, by.x="Lean", by.y="Lean")
-merged_lean_counts_pc$pct = merged_lean_counts_pc$count.x / merged_lean_counts_pc$count.y
-
-plot(merged_lean_counts_pc$cluster_id, as.numeric(merged_lean_counts_pc$Lean), cex = 10 * merged_lean_counts_pc$pct, xlab = "Cluster ID", ylab = "Solid Dem to Solid GOP", main = "Percentage of Lean By Cluster Based on First 17 Pcs")
-
-
-# Try clustering with scaled data instead of pc
-c = mclustBIC(scaled_facts, G=5:15)
-plot(c)
-
-# Best cluster model is k=7 VEV
-summary(c)
-
-em_clusters = Mclust(scaled_facts, G=7, modelNames = "VEV")
-
-# Possibly compare the EM results to kmeans with k=10
-
-cluster_id = em_clusters$classification
-
-cluster_count = data.frame(cluster_id) %>%
-  group_by(cluster_id) %>%
-  summarise(n = n())
-
-state_cluster_counts = cbind(joined_facts_results[1:3], cluster_id) %>% 
-  group_by(state_abbreviation, cluster_id) %>%
-  summarise(count = n())
-
-Lean_cluster_counts = data.frame(cbind(joined_facts_results[length(joined_facts_results)], cluster_id)) %>% 
-  group_by(Lean, cluster_id) %>%
-  summarise(count = n())
-
-View(Lean_cluster_counts)
-
-# Note that there are many more Solid GOP than Solid Dem counties
-plot(jitter(cluster_id), jitter(as.numeric(joined_facts_results$Lean)))
-
-merged_lean_counts = merge(Lean_cluster_counts, Lean_counts, by.x="Lean", by.y="Lean")
-merged_lean_counts$pct = merged_lean_counts$count.x / merged_lean_counts$count.y
-
-plot(merged_lean_counts$cluster_id, as.numeric(merged_lean_counts$Lean), cex = 10 * merged_lean_counts$pct, xlab = "Cluster ID", ylab = "Solid Dem to Solid GOP", main = "Percentage of Lean By Cluster")
-
-
-
-# Try clustering just based on pct non hispanic White, pct college degree, per capita income
-expected_trump = scaled_facts[, c("RHI825214", "EDU685213", "INC910213")] 
-
-trump_bic = mclustBIC(expected_trump, G=1:20)
-plot(trump_bic)
-
-# Best cluster model is k=8 VVV
-summary(trump_bic)
-
-em_trump_clusts = Mclust(expected_trump, G=8, modelNames = "VVV")
-
-cluster_id_trump = em_trump_clusts$classification
-
-cluster_count_trump = data.frame(cluster_id_trump) %>%
-  group_by(cluster_id_trump) %>%
-  summarise(n = n())
-
-state_cluster_counts_trump = cbind(joined_facts_results[1:3], cluster_id_trump) %>% 
-  group_by(state_abbreviation, cluster_id_trump) %>%
-  summarise(count = n())
-
-Lean_cluster_counts_trump = data.frame(cbind(joined_facts_results[length(joined_facts_results)], cluster_id_trump)) %>% 
-  group_by(Lean, cluster_id_trump) %>%
-  summarise(count = n())
-
-merged_lean_counts_trump = merge(Lean_cluster_counts_trump, Lean_counts, by.x="Lean", by.y="Lean")
-merged_lean_counts_trump$pct = merged_lean_counts_trump$count.x / merged_lean_counts_trump$count.y
-
-plot(merged_lean_counts_trump$cluster_id, as.numeric(merged_lean_counts_trump$Lean), cex = 10 * merged_lean_counts_trump$pct, xlab = "Cluster ID", ylab = "Solid Dem to Solid GOP", main = "% of Lean By Cluster Based on % White, % College Degree, Income")
-
-clPairs(expected_trump, joined_facts_results[,length(joined_facts_results)], lower.panel=NULL)
-clPairsLegend(0, 0.46, class = clp$class,
-col = clp$col, pch = clp$pch)
-```
-
 
 #Maps
 ```{r echo=TRUE}
@@ -360,88 +190,86 @@ county_choropleth(FIPS_PCI,
 
 
 
-# Model Fitting
+#Principal Component Analysis
+```{r echo=TRUE}
+#########PCA
+prin_comp <- prcomp(scaled_facts, scale. = F)
+
+pca <- summary(prin_comp)
+
+#scree plot
+plot(pca$importance[2,], xlab = "Principal Component",
+             ylab = "Proportion of Variance Explained",
+             type = "b")
+
+#cumulative scree plot
+plot(pca$importance[3,], xlab = "Principal Component",
+              ylab = "Cumulative Proportion of Variance Explained",
+              type = "b")
+# abline(h=0.8)
+abline(v=5)
+
+# Data from first 17 principal components
+pc_data <- prin_comp$x[,1:10]
+
+
+# 
+# autoplot(prin_comp, data = scaled_facts, colour = 'Lean', loadings = TRUE, loadings.colour = 'blue',
+#          loadings.label = TRUE, loadings.label.size = 3) +
+#   ggtitle("First two PC's using Original Variables")
+# 
+# 
+
+
+```
+
+
+
+
+
+
+# Logit Model Fitting
 ```{r, echo=TRUE}
-library(VGAM)
-set.seed(1)
 
 # Fit a logit model with just non hispanic white and college dregree
 joined_facts_results$GOPDem[joined_facts_results$points_diff_rep < 0] <- 0
 joined_facts_results$GOPDem[joined_facts_results$points_diff_rep > 0] <- 1
 
-kFold <- function(x, k) split(sample(1:nrow(x)), cut(seq_along(sample(1:nrow(x))), k, labels = FALSE)) 
-
-kFoldCVLogit <- function(y, x, k, columns, link){
-  folds = kFold(x, k)
-
-  mses = c()
-  for (i in 1:k) {
-    testIndexes = folds[[i]]
-    testData = x[testIndexes, ]
-    trainData = x[-testIndexes, ]
-    
-    fit <- glm(y[-testIndexes] ~ ., data=data.frame(trainData[,columns]), 
-                family=(binomial(link = link)))
-    predicted <- predict(fit, data.frame(testData[,columns]), type="response")
-    mse = sum((y[testIndexes] - predicted)^2)
-    mses = c(mses, mse)
-  }
-
-list(mse, fit)
-}
 y = joined_facts_results$GOPDem
 x = scaled_facts
-k = 10
-columns = c("RHI825214", "EDU685213")
-link = "logit"
-result = kFoldCVLogit(y, x, k, columns, link)
-mse = result[[1]]
-model = result[[2]]
-
-
-
-# MAKE NOTE OF SCORING USED FOR CROSS VALIDATION
-
-kFoldCVMultinomial <- function(y, x, k, columns, link){
-  folds = kFold(x, k)
-
-  mses = c()
-  for (i in 1:k) {
-    testIndexes = folds[[i]]
-    testData = x[testIndexes, ]
-    trainData = x[-testIndexes, ]
-    
-    fit <- vglm(y[-testIndexes] ~ ., data=data.frame(trainData[,columns]), 
-                family=(multinomial))
-    predicted <- predict(fit, data.frame(testData[,columns]), type="response")
-    # Calculating the MSE using Brier Score
-    mse = sum((y[testIndexes] - predicted[cbind(seq_along(y[testIndexes]), y[testIndexes])])^2) 
-    
-    mses = c(mses, mse)
-  }
-  
-list(sum(mses) / nrow(x), fit)
-}
-y = as.numeric(joined_facts_results$Lean)
-x = scaled_facts
-k = 10
-columns = c("SBO315207", "EDU685213")
-link = "logit"
-result = kFoldCVMultinomial(y, x, k, columns, link)
-mse = result[[1]]
-model = result[[2]]
-summary(model)
-
-y = as.numeric(joined_facts_results$Lean)
-x = scaled_facts
-k = 10
-columns = c("RHI825214", "EDU685213")
 link = "logit"
 
-samp <- sample(1:3100, 250)
-logit <- vglm(joined_facts_results$Lean[samp] ~ ., data=data.frame(scaled_facts[samp,c("RHI825214", "EDU685213")]), 
-              family=(multinomial))
+# Train on 75% Test on 25%
+testIndexes = sample(1:nrow(x), floor(0.25 * nrow(x)))
 
+# PC FIT
+# Use the first 17 PCs to fit the model
+pc5_fit <- glm(y[-testIndexes] ~ ., data=data.frame(pc_data[-testIndexes,1:5]), family=binomial(link=link))
+pc5_predicted <- predict(pc5_fit, data.frame(pc_data[testIndexes,]), type="response")
+# Confusion Matrix
+table(pred=ifelse(pc5_predicted > 0.5, 1, 0),true=y[testIndexes])
+
+pc5_outcome = data.frame(cbind(y[testIndexes], predict(pc5_fit, data.frame(pc_data[testIndexes,1:5]), type="response")))
+colnames(pc5_outcome) = c("Truth", "Predicted")
+
+#Plot ROC Curve
+pc5_r = roc(Truth ~ Predicted, data = pc5_outcome)
+plot(pc5_r, main = paste("First 5 PCs Model Auc:", round(auc(pc5_r), 3)))
+
+# Use the first 10 PCs to fit the model
+pc_fit <- glm(y[-testIndexes] ~ ., data=data.frame(pc_data[-testIndexes,]), family=binomial(link=link))
+pc_predicted <- predict(pc_fit, data.frame(pc_data[testIndexes,]), type="response")
+# Confusion Matrix
+table(pred=ifelse(pc_predicted > 0.5, 1, 0),true=y[testIndexes])
+
+pc_outcome = data.frame(cbind(y[testIndexes], predict(pc_fit, data.frame(pc_data[testIndexes,]), type="response")))
+colnames(pc_outcome) = c("Truth", "Predicted")
+
+#Plot ROC Curve
+pc_r = roc(Truth ~ Predicted, data = pc_outcome)
+plot(pc_r, main = paste("First 10 PCs Model Auc:", round(auc(pc_r), 3)))
+
+# FORWARD/BACKWARD AIC/BIC
 
 # Perform forward and backward AIC/BIC variable selection
 y = joined_facts_results$GOPDem
@@ -456,13 +284,32 @@ forAIC = step(fit_null,  # Start with NULL model
                scope = list(lower=fit_null, upper=fit_full), # Range of models
                direction="forward",
               trace = FALSE) # Forward or backward
+faCoefficients = names(forAIC$coefficients)
+faCoefficients = faCoefficients[faCoefficients != "(Intercept)"]
+
+fa_outcome = data.frame(cbind(y[testIndexes], predict(forAIC, data.frame(x[testIndexes,]), type="response")))
+colnames(fa_outcome) = c("Truth", "Predicted")
+
+#Plot ROC Curve
+fa_r = roc(Truth ~ Predicted, data = fa_outcome)
+plot(fa_r, main = paste("Forward AIC Model Auc:", round(auc(fa_r), 3)))
+
 
 # Backward AIC:
 backAIC = step(fit_full,  # Start with NULL model
                scope = list(lower=fit_null, upper=fit_full), # Range of models
                direction="backward",
               trace = FALSE) # Forward or backward
-summary(backAIC)
+baCoefficients = names(backAIC$coefficients)
+baCoefficients = baCoefficients[baCoefficients != "(Intercept)"]
+
+ba_outcome = data.frame(cbind(y[testIndexes], predict(backAIC, data.frame(x[testIndexes,]), type="response")))
+colnames(ba_outcome) = c("Truth", "Predicted")
+
+#Plot ROC Curve
+ba_r = roc(Truth ~ Predicted, data = ba_outcome)
+plot(ba_r, main = paste("Backward AIC Model Auc:", round(auc(ba_r), 3)))
+
 
 # Forward BIC:
 forBIC = step(fit_null,  # Start with NULL model
@@ -470,6 +317,15 @@ forBIC = step(fit_null,  # Start with NULL model
                direction="forward",
               k = log(length(y)),
               trace = FALSE) # Forward or backward
+fbCoefficients = names(forBIC$coefficients)
+fbCoefficients = fbCoefficients[fbCoefficients != "(Intercept)"]
+
+fb_outcome = data.frame(cbind(y[testIndexes], predict(forBIC, data.frame(x[testIndexes,]), type="response")))
+colnames(fb_outcome) = c("Truth", "Predicted")
+
+#Plot ROC Curve
+fb_r = roc(Truth ~ Predicted, data = fb_outcome)
+plot(fb_r, main = paste("Forward BIC Model Auc:", round(auc(fb_r), 3)))
 
 # Backward BIC:
 backBIC = step(fit_full,  # Start with NULL model
@@ -477,104 +333,21 @@ backBIC = step(fit_full,  # Start with NULL model
                direction="backward",
               k = log(length(y)),
               trace = FALSE) # Forward or backward
-summary(backBIC)
+bbCoefficients = names(backBIC$coefficients)
+bbCoefficients = bbCoefficients[bbCoefficients != "(Intercept)"]
 
-# Forward Backward AIC/BIC for probit
-link = "probit"
-fit_full <- glm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes,]), 
-                family=(binomial(link = link)))
-fit_null <- glm(y[-testIndexes] ~ 1, data=data.frame(x[-testIndexes,]), family = binomial(link = "logit"))
+bb_outcome = data.frame(cbind(y[testIndexes], predict(backBIC, data.frame(x[testIndexes,]), type="response")))
+colnames(bb_outcome) = c("Truth", "Predicted")
 
-# Forward AIC:
-forAIC = step(fit_null,  # Start with NULL model
-               scope = list(lower=fit_null, upper=fit_full), # Range of models
-               direction="forward",
-              trace = FALSE) # Forward or backward
+#Plot ROC Curve
+bb_r = roc(Truth ~ Predicted, data = bb_outcome)
+plot(bb_r, main = paste("Backward BIC Model Auc:", round(auc(bb_r), 3)))
 
-# Backward AIC:
-backAIC = step(fit_full,  # Start with NULL model
-               scope = list(lower=fit_null, upper=fit_full), # Range of models
-               direction="backward",
-              trace = FALSE) # Forward or backward
-summary(backAIC)
-
-# Forward BIC:
-forBIC = step(fit_null,  # Start with NULL model
-               scope = list(lower=fit_null, upper=fit_full), # Range of models
-               direction="forward",
-              k = log(length(y)),
-              trace = FALSE) # Forward or backward
-
-# Forward BIC:
-backBIC = step(fit_full,  # Start with NULL model
-               scope = list(lower=fit_null, upper=fit_full), # Range of models
-               direction="backward",
-              k = log(length(y)),
-              trace = FALSE) # Forward or backward
-summary(backBIC)
-
-
-# Take each of these models and perform 10 Fold CV compare to our Baseline model of White and Education
-
-```
-
-
-#Laso, Confusion Matrix, and ROC Curve
-```{r, echo=TRUE}
-set.seed(1)
-
-#Prepare Data
-election_data <- as.data.frame(cbind(scaled_facts,joined_facts_results$GOPDem))
-colnames(election_data) <- c(colnames(election_data)[1:ncol(election_data)-1],"GOPDem")
-# election_data$Winner[election_data$Winner == 0] = "Democrat"
-# election_data$Winner[election_data$Winner == 1] = "GOP"
-
-#Split into training and test sets and seperate (.5 to .5 train to test ratio)
-election_data[,"train"] <- ifelse(runif(nrow(election_data))<0.5,1,0)
-trainset <- election_data[election_data$train==1,]
-testset <- election_data[election_data$train==0,]
-
-#Remove train column from train and test sets
-trainColNum <- grep("train",names(trainset))
-trainset <- trainset[,-trainColNum]
-testset <- testset[,-trainColNum]
-
-
-#Fit model
-glm_model <- glm(GOPDem~.,data = trainset, family = binomial)
-
-
-
-#Predict probabilities on testset
-typeColNum <- grep("GOPDem",names(election_data))
-glm_prob <- predict.glm(glm_model,testset[,-typeColNum],type="response")
-
-
-# #which classes do these probabilities refer to? What are 1 and 0?
-# contrasts(election_data$Winner)
-
-#Make predictions
-glm_predict <- rep(0,nrow(testset))
-glm_predict[glm_prob>.5] <- 1
-
-
-#Confusion matrix
-table(pred=glm_predict,true=testset$GOPDem)
-
-#Accuracy
-mean(glm_predict==testset$GOPDem)
-
-
-
-########Laso#########
-
-#Create X&Y Variables (for X, convert training data to matrix format)
-x <- model.matrix(GOPDem~.,trainset)
-y <- trainset$GOPDem
+# LASSO
 
 #Perform grid search to find optimal value of lambda
 #family= binomial => logistic regression, alpha=1 => lasso
-cv.out <- cv.glmnet(x,y,alpha=1,family="binomial",type.measure = "mse" )
+cv.out <- cv.glmnet(x,y,alpha=1,family="binomial",type.measure = "auc" )
 #plot result
 plot(cv.out)
 
@@ -585,28 +358,292 @@ lambda_1se <- cv.out$lambda.1se
 
 
 #Regression coefficients
-coef(cv.out,s=lambda_1se)
+lasso_coeff = colnames(x)[summary(coef(cv.out,s=lambda_1se))$i]
+lasso_coeff = lasso_coeff[lasso_coeff != "(Intercept)"][!is.na(lasso_coeff)]
 
-#Get test data
-x_test <- model.matrix(GOPDem~.,testset)
-#Predict class, type=”class”
-lasso_prob <- predict(cv.out,newx = x_test,s=lambda_1se,type="response")
-#Translate probabilities to predictions
-lasso_predict <- rep("0",nrow(testset))
-lasso_predict[lasso_prob>.5] <- "1"
+lasso_fit = glm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes,lasso_coeff]), 
+                family=(binomial(link = link)))
 
-#Confusion matrix
-table(pred=lasso_predict,true=testset$GOPDem)
-
-#Accuracy
-mean(lasso_predict==testset$GOPDem)
-
-
-######### ROC ##########
-#Load probabilities into testset data
-testset$prob = glm_prob
+lasso_outcome = data.frame(cbind(y[testIndexes], predict(lasso_fit, data.frame(x[testIndexes,]), type="response")))
+colnames(lasso_outcome) = c("Truth", "Predicted")
 
 #Plot ROC Curve
-plot.roc(GOPDem ~ prob, data = testset,smooth=TRUE,add=FALSE, reuse.auc=TRUE,
-axes=TRUE, legacy.axes=FALSE)
+lasso_r = roc(Truth ~ Predicted, data = lasso_outcome)
+plot(lasso_r, main = paste("Lasso Model Auc:", round(auc(lasso_r), 3)))
+
+# Count the number times each variable was selected
+all_coeff_counts = sort(table(c(faCoefficients, baCoefficients, fbCoefficients, bbCoefficients, lasso_coeff)), decreasing = TRUE)
+
+
+
+
+
+
+
+# Create a bar plot of coefficients and their counts
+ggplot(data=data.frame(all_coeff_counts[all_coeff_counts > 2]), aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity") + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  labs(x = "Variable", y = "Frequency of Selection")
+
+
+
+
+
+# Create consensus model using variables chosen every time
+consensus_coeff = names(all_coeff_counts[all_coeff_counts == 5])
+consensus_coeff = consensus_coeff[consensus_coeff != "(Intercept)"]
+
+consensus_fit = glm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes,consensus_coeff]), 
+                family=(binomial(link = link)))
+consensus_coeff
+
+consensus_outcome = data.frame(cbind(y[testIndexes], predict(consensus_fit, data.frame(x[testIndexes,]), type="response")))
+colnames(consensus_outcome) = c("Truth", "Predicted")
+
+#Plot ROC Curve
+consensus_r = roc(Truth ~ Predicted, data = consensus_outcome)
+plot(consensus_r, main = paste("Consensus Selected Coefficients Auc:", round(auc(consensus_r), 3)))
+
+# Create majority model using variables chosen 4 or more times
+majority_coeff = names(all_coeff_counts[all_coeff_counts > 3])
+majority_coeff = consensus_coeff[consensus_coeff != "(Intercept)"]
+
+majority_fit = glm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes,majority_coeff]), 
+                family=(binomial(link = link)))
+majority_coeff
+
+majority_outcome = data.frame(cbind(y[testIndexes], predict(majority_fit, data.frame(x[testIndexes,]), type="response")))
+colnames(majority_outcome) = c("Truth", "Predicted")
+
+#Plot ROC Curve
+majority_r = roc(Truth ~ Predicted, data = majority_outcome)
+plot(majority_r, main = paste("4 or 5 Models Selected Coefficients Auc:", round(auc(majority_r), 3)))
 ```
+
+
+# Cummulative Logit Fitting (Ordinal)
+```{r, echo=TRUE}
+
+y = as.numeric(joined_facts_results$Lean)
+
+# Principal Components
+pc_ordinal <- vglm(y[-testIndexes] ~ ., data=data.frame(pc_data[-testIndexes, ]), 
+                family=(cumulative(link="logit", parallel=TRUE)))
+
+pc_prediction = predict(pc_ordinal, data.frame(pc_data[testIndexes, ]), type="response")
+table(Expected=max.col(pc_prediction),Actual=joined_facts_results$Lean[testIndexes])
+
+pc_outcome = data.frame(cbind(y[testIndexes], max.col(pc_prediction)))
+colnames(pc_outcome) = c("Truth", "Predicted")
+#Plot ROC Curve
+pc_r = roc(Truth ~ Predicted, data = pc_outcome)
+plot(pc_r, main = paste("First 10 PCs Auc:", round(auc(pc_r), 3)))
+
+# Forward AIC
+fa_ordinal <- vglm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes, faCoefficients]), 
+                family=(cumulative(link="logit", parallel=TRUE)))
+
+fa_prediction = predict(fa_ordinal, data.frame(x[testIndexes, faCoefficients]), type="response")
+table(Expected=max.col(fa_prediction),Actual=joined_facts_results$Lean[testIndexes])
+
+fa_outcome = data.frame(cbind(y[testIndexes], max.col(fa_prediction)))
+colnames(fa_outcome) = c("Truth", "Predicted")
+#Plot ROC Curve
+fa_r = roc(Truth ~ Predicted, data = fa_outcome)
+plot(fa_r, main = paste("Forward AIC Coefficients Auc:", round(auc(fa_r), 3)))
+
+# Backward AIC
+ba_ordinal <- vglm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes, baCoefficients]), 
+                family=(cumulative(link="logit", parallel=TRUE)))
+
+ba_prediction = predict(ba_ordinal, data.frame(x[testIndexes, baCoefficients]), type="response")
+table(Expected=max.col(ba_prediction),Actual=joined_facts_results$Lean[testIndexes])
+
+ba_outcome = data.frame(cbind(y[testIndexes], max.col(ba_prediction)))
+colnames(ba_outcome) = c("Truth", "Predicted")
+#Plot ROC Curve
+ba_r = roc(Truth ~ Predicted, data = ba_outcome)
+plot(ba_r, main = paste("Backward AIC Coefficients Auc:", round(auc(ba_r), 3)))
+
+# Forward BIC
+fb_ordinal <- vglm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes, fbCoefficients]), 
+                family=(cumulative(link="logit", parallel=TRUE)))
+
+fb_prediction = predict(fb_ordinal, data.frame(x[testIndexes, fbCoefficients]), type="response")
+table(Expected=max.col(fb_prediction),Actual=joined_facts_results$Lean[testIndexes])
+
+fb_outcome = data.frame(cbind(y[testIndexes], max.col(fb_prediction)))
+colnames(fb_outcome) = c("Truth", "Predicted")
+#Plot ROC Curve
+fb_r = roc(Truth ~ Predicted, data = fb_outcome)
+plot(fb_r, main = paste("Forward BIC Coefficients Auc:", round(auc(fb_r), 3)))
+
+# Backward BIC
+bb_ordinal <- vglm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes, bbCoefficients]), 
+                family=(cumulative(link="logit", parallel=TRUE)))
+
+bb_prediction = predict(bb_ordinal, data.frame(x[testIndexes, bbCoefficients]), type="response")
+table(Expected=max.col(bb_prediction),Actual=joined_facts_results$Lean[testIndexes])
+
+bb_outcome = data.frame(cbind(y[testIndexes], max.col(bb_prediction)))
+colnames(bb_outcome) = c("Truth", "Predicted")
+#Plot ROC Curve
+bb_r = roc(Truth ~ Predicted, data = bb_outcome)
+plot(bb_r, main = paste("Backward BIC Coefficients Auc:", round(auc(bb_r), 3)))
+
+# Lasso
+lasso_ordinal <- vglm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes, lasso_coeff]), 
+                family=(cumulative(link="logit", parallel=TRUE)))
+
+lasso_prediction = predict(lasso_ordinal, data.frame(x[testIndexes, lasso_coeff]), type="response")
+table(Expected=max.col(lasso_prediction),Actual=joined_facts_results$Lean[testIndexes])
+
+lasso_outcome = data.frame(cbind(y[testIndexes], max.col(lasso_prediction)))
+colnames(lasso_outcome) = c("Truth", "Predicted")
+#Plot ROC Curve
+lasso_r = roc(Truth ~ Predicted, data = lasso_outcome)
+plot(lasso_r, main = paste("Lasso Coefficients Auc:", round(auc(lasso_r), 3)))
+
+# Consensus
+consensus_ordinal <- vglm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes, consensus_coeff]), 
+                family=(cumulative(link="logit", parallel=TRUE)))
+
+consensus_prediction = predict(consensus_ordinal, data.frame(x[testIndexes, consensus_coeff]), type="response")
+table(Expected=max.col(consensus_prediction),Actual=joined_facts_results$Lean[testIndexes])
+
+consensus_outcome = data.frame(cbind(y[testIndexes], max.col(consensus_prediction)))
+colnames(consensus_outcome) = c("Truth", "Predicted")
+#Plot ROC Curve
+consensus_r = roc(Truth ~ Predicted, data = consensus_outcome)
+plot(consensus_r, main = paste("Consensus Coefficients Auc:", round(auc(consensus_r), 3)))
+
+# Majority
+majority_ordinal <- vglm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes, majority_coeff]), 
+                family=(cumulative(link="logit", parallel=TRUE)))
+
+majority_prediction = predict(majority_ordinal, data.frame(x[testIndexes, majority_coeff]), type="response")
+table(Expected=max.col(majority_prediction),Actual=joined_facts_results$Lean[testIndexes])
+
+majority_outcome = data.frame(cbind(y[testIndexes], max.col(majority_prediction)))
+colnames(majority_outcome) = c("Truth", "Predicted")
+#Plot ROC Curve
+majority_r = roc(Truth ~ Predicted, data = majority_outcome)
+plot(majority_r, main = paste("4 or 5 Models Selected Coefficients Auc:", round(auc(majority_r), 3)))
+
+```
+# CHANGE VARIABLE NAMES FOR ALL BELOW
+
+
+# Multinomial Logit Fitting
+```{r, echo =TRUE}
+
+y = as.numeric(joined_facts_results$Lean)
+
+# First 10 PCs
+pc_multi <- vglm(y[-testIndexes] ~ ., data=data.frame(pc_data[-testIndexes, faCoefficients]), 
+                family=(multinomial))
+
+pc_prediction = predict(pc_multi, data.frame(pc_data[testIndexes, ]), type="response")
+table(Expected=max.col(pc_prediction),Actual=joined_facts_results$Lean[testIndexes])
+
+pc_outcome = data.frame(cbind(y[testIndexes], max.col(pc_prediction)))
+colnames(pc_outcome) = c("Truth", "Predicted")
+#Plot ROC Curve
+pc_r = roc(Truth ~ Predicted, data = pc_outcome)
+plot(pc_r, main = paste("First 10 PCs Auc:", round(auc(pc_r), 3)))
+
+# Forward AIC
+fa_multi <- vglm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes, faCoefficients]), 
+                family=(multinomial))
+
+fa_prediction = predict(fa_multi, data.frame(x[testIndexes, faCoefficients]), type="response")
+table(Expected=max.col(fa_prediction),Actual=joined_facts_results$Lean[testIndexes])
+
+fa_outcome = data.frame(cbind(y[testIndexes], max.col(fa_prediction)))
+colnames(fa_outcome) = c("Truth", "Predicted")
+#Plot ROC Curve
+fa_r = roc(Truth ~ Predicted, data = fa_outcome)
+plot(fa_r, main = paste("Forward AIC Coefficients Auc:", round(auc(fa_r), 3)))
+
+# Backward AIC
+ba_multi <- vglm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes, baCoefficients]), 
+                family=(multinomial))
+
+ba_prediction = predict(ba_multi, data.frame(x[testIndexes, baCoefficients]), type="response")
+table(Expected=max.col(ba_prediction),Actual=joined_facts_results$Lean[testIndexes])
+
+ba_outcome = data.frame(cbind(y[testIndexes], max.col(ba_prediction)))
+colnames(ba_outcome) = c("Truth", "Predicted")
+#Plot ROC Curve
+ba_r = roc(Truth ~ Predicted, data = ba_outcome)
+plot(ba_r, main = paste("Backward AIC Coefficients Auc:", round(auc(ba_r), 3)))
+
+# Forward BIC
+fb_multi <- vglm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes, fbCoefficients]), 
+                family=(multinomial))
+
+fb_prediction = predict(fb_multi, data.frame(x[testIndexes, fbCoefficients]), type="response")
+table(Expected=max.col(fb_prediction),Actual=joined_facts_results$Lean[testIndexes])
+
+fb_outcome = data.frame(cbind(y[testIndexes], max.col(fb_prediction)))
+colnames(fb_outcome) = c("Truth", "Predicted")
+#Plot ROC Curve
+fb_r = roc(Truth ~ Predicted, data = fb_outcome)
+plot(fb_r, main = paste("Forward BIC Coefficients Auc:", round(auc(fb_r), 3)))
+
+# Backward BIC
+bb_multi <- vglm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes, bbCoefficients]), 
+                family=(multinomial))
+
+bb_prediction = predict(bb_multi, data.frame(x[testIndexes, bbCoefficients]), type="response")
+table(Expected=max.col(bb_prediction),Actual=joined_facts_results$Lean[testIndexes])
+
+bb_outcome = data.frame(cbind(y[testIndexes], max.col(bb_prediction)))
+colnames(bb_outcome) = c("Truth", "Predicted")
+#Plot ROC Curve
+bb_r = roc(Truth ~ Predicted, data = bb_outcome)
+plot(bb_r, main = paste("Backward BIC Coefficients Auc:", round(auc(bb_r), 3)))
+
+# Lasso
+lasso_multi <- vglm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes, lasso_coeff]), 
+                family=(multinomial))
+
+lasso_prediction = predict(lasso_multi, data.frame(x[testIndexes, lasso_coeff]), type="response")
+table(Expected=max.col(lasso_prediction),Actual=joined_facts_results$Lean[testIndexes])
+
+lasso_outcome = data.frame(cbind(y[testIndexes], max.col(lasso_prediction)))
+colnames(lasso_outcome) = c("Truth", "Predicted")
+#Plot ROC Curve
+lasso_r = roc(Truth ~ Predicted, data = lasso_outcome)
+plot(lasso_r, main = paste("Lasso Coefficients Auc:", round(auc(lasso_r), 3)))
+
+# Consensus
+consensus_multi <- vglm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes, consensus_coeff]), 
+                family=(multinomial))
+
+consensus_prediction = predict(consensus_multi, data.frame(x[testIndexes, consensus_coeff]), type="response")
+table(Expected=max.col(consensus_prediction),Actual=joined_facts_results$Lean[testIndexes])
+
+consensus_outcome = data.frame(cbind(y[testIndexes], max.col(consensus_prediction)))
+colnames(consensus_outcome) = c("Truth", "Predicted")
+#Plot ROC Curve
+consensus_r = roc(Truth ~ Predicted, data = consensus_outcome)
+plot(consensus_r, main = paste("Consensus Coefficients Auc:", round(auc(consensus_r), 3)))
+
+# Majority
+majority_multi <- vglm(y[-testIndexes] ~ ., data=data.frame(x[-testIndexes, majority_coeff]), 
+                family=(multinomial))
+
+majority_prediction = predict(majority_multi, data.frame(x[testIndexes, majority_coeff]), type="response")
+table(Expected=max.col(majority_prediction),Actual=joined_facts_results$Lean[testIndexes])
+
+majority_outcome = data.frame(cbind(y[testIndexes], max.col(majority_prediction)))
+colnames(majority_outcome) = c("Truth", "Predicted")
+#Plot ROC Curve
+majority_r = roc(Truth ~ Predicted, data = majority_outcome)
+plot(majority_r, main = paste("4 or 5 Models Selected Coefficients Auc:", round(auc(majority_r), 3)))
+```
+
+
+
+
