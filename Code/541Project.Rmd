@@ -1,0 +1,527 @@
+---
+title: "541Project"
+author: "Travis Benedict"
+date: "November 29, 2018"
+output: html_document
+---
+
+```{r echo=TRUE}
+library(magrittr)
+library(dplyr)
+library(mclust)
+library(VGAM)
+library(mapproj)
+library(ggmap)
+library(ggplot2)
+library(maps)
+library(mapdata)
+library(choroplethr)
+library(choroplethrMaps)
+library(glmnet)
+library(ROCR)
+library(pROC)
+library(mlbench)
+library(MASS)
+
+set.seed(1)
+```
+
+
+#Format Data
+```{r echo=TRUE}
+
+# Predictors are separated from vote results join on FIPS
+results = read.csv('CountyLevelResults.csv')
+facts = read.csv('county_facts.csv')
+descriptions = read.csv('county_facts_dictionary.csv')
+
+###Point Diff Column Calculation
+results$points_diff_rep = ((results$votes_dem - results$votes_gop)/results$total_votes)*-1
+
+
+###Lean Calculation
+results$Lean <- cut(results$points_diff_rep, 
+                       breaks = c(-1, -.34, -.12, -.07, -.04, .04, .07, .12, .34, 1), 
+                       labels = c("Solid Democratic", "Likely Democratic", "Lean Democratic", "Tilt Democratic", "Toss-Up", "Tilt GOP", "Lean GOP", "Likely GOP", "Solid GOP"), 
+                       right = FALSE)
+results$Lean_Number <- as.numeric(results$Lean)
+
+
+###Winner Calculation
+results$Winner <- cut(results$points_diff_rep, 
+                       breaks = c(-1, 0, 1), 
+                       labels = c("Democratic", "Republican"), 
+                       right = FALSE)
+results$Winner_Number <- as.numeric(results$Winner)
+
+# Remove rows without results and identifier columns
+
+joined_facts_results = merge(facts, results[c("combined_fips", "Lean", "Lean_Number", "points_diff_rep", "Winner", "Winner_Number")], by.x="Fips", by.y="combined_fips")
+
+cleaned_facts = data.frame(joined_facts_results[c(-1, -2, -3, -length(joined_facts_results[1,]), -(length(joined_facts_results[1,])-1), -(length(joined_facts_results[1,])-2), -(length(joined_facts_results[1,])-3), -(length(joined_facts_results[1,])-4), -(length(joined_facts_results[1,])-5), -(length(joined_facts_results[1,])-6))])
+
+scaled_facts = scale(cleaned_facts)
+```
+
+# Exploratory Data Visualizations
+```{r, echo=TRUE}
+
+ggplot(cleaned_facts, aes(x=log10(PST045214))) + geom_histogram() + ggtitle("County Population") + scale_x_continuous(name="log10 Population") + scale_y_continuous(name="Count")
+
+ggplot(cleaned_facts, aes(x=RHI125214)) + geom_histogram() + ggtitle("Percentage of White Population by County") + scale_x_continuous(name="Percent") + scale_y_continuous(name="Count")
+
+ggplot(cleaned_facts, aes(x=EDU685213)) + geom_histogram() + ggtitle("Percentage of People 25+ with Bachelor's Degrees or Higher") + scale_x_continuous(name="Percent") + scale_y_continuous(name="Count")
+
+```
+
+
+#Maps
+```{r echo=TRUE}
+###Political Lean by County (State and County Outline)
+colors = c("#0000ff", "#2020df", "#4040bf", "#60609f", "#808080", "#9f6060", "#bf4040", "#df2020", "#ff0000")
+colorsmatched <- joined_facts_results$Lean_Number[match(county.fips$fips, joined_facts_results$Fips)]
+
+map("county", col = colors[colorsmatched], fill = TRUE, resolution = 0, 
+    lty = 0, projection = "polyconic")
+# Add border around each State
+map("county", col = "white", fill = FALSE, add = TRUE, lty = 1, lwd = .3, 
+    projection = "polyconic")
+map("state", col = "white", fill = FALSE, add = TRUE, lty = 1, lwd = .8, 
+    projection = "polyconic")
+title("Political Lean")
+leg.txt <- c("Solid Democratic", "Likely Democratic", "Lean Democratic", "Tilt Democratic", "Toss-Up", "Tilt GOP", "Lean GOP", "Likely GOP", "Solid GOP")
+legend("top", leg.txt, horiz = TRUE, fill = colors, cex=.35)
+
+
+###Winner by County (State and County Outline)
+colors = c("#0000ff", "#ff0000")
+colorsmatched <- joined_facts_results$Winner_Number[match(county.fips$fips, joined_facts_results$Fips)+1]
+
+map("county", col = colors[colorsmatched], fill = TRUE, resolution = 0, 
+    lty = 0, projection = "polyconic")
+# Add border around each State
+map("county", col = "white", fill = FALSE, add = TRUE, lty = 1, lwd = .3, 
+    projection = "polyconic")
+map("state", col = "white", fill = FALSE, add = TRUE, lty = 1, lwd = .8, 
+    projection = "polyconic")
+title("Political Lean")
+leg.txt <- c("Democratic", "Republican")
+legend("top", leg.txt, horiz = TRUE, fill = colors, cex=.5)
+
+
+#Demographic Maps
+
+#Percent Non-Hispanic White
+FIPS_White <- joined_facts_results %>% select(region=Fips, value=RHI825214)
+county_choropleth(FIPS_White,
+                  title ="2016 County Percent Non-Hispanic White", 
+                 legend = "Percent Non-Hispanic White")
+
+#Percent College Degree
+FIPS_College_Degree <- joined_facts_results %>% select(region=Fips, value=EDU685213)
+county_choropleth(FIPS_College_Degree,
+                  title ="2016 County Percent College Degree", 
+                 legend = "Percent College Degree")
+
+#Per Capita Income
+FIPS_PCI <- joined_facts_results %>% select(region=Fips, value=INC910213)
+county_choropleth(FIPS_PCI,
+                  title ="2016 County Per Capita Income", 
+                 legend = "Per Capita Income")
+
+
+###Political Lean by County (State and County Outline)
+# usa <- map_data("usa")
+# states <- map_data("state")
+# county <- map_data("county")
+# 
+# 
+# ggplot(data = county) + 
+#   geom_polygon(aes(x = long, y = lat, fill = region, group = group), color = "white") + 
+#   coord_fixed(1.3) +
+#   guides(fill=FALSE)  # do this to leave off the color legend
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# map("county", fill = TRUE, resolution = 0, 
+#     lty = 0, projection = "polyconic") + scale_fill_gradient(trans = "log10")
+# 
+# 
+# 
+# # counties <- map_data("county")
+# # USA_counties <- ggplot(data = counties, mapping = aes(x = long, y = lat, group = group)) + 
+# #   coord_fixed(1.3) + 
+# #   geom_polygon(color = "black", fill = "gray")
+# # 
+# # USA_counties + geom_polygon(data = cleaned_facts, aes(fill = RHI825214), color = "white")
+# # 
+# # cleaned_facts %>%
+# #   ggplot(aes(long, lat, group = group, fill = RHI825214)) +
+# #   geom_polygon(color = NA) +
+# #   coord_map(projection = "albers", lat0 = 39, lat1 = 45) +
+# #   labs(fill = "Median Household Income")
+# # 
+# # 
+# # cleaned_facts %>%
+# #   ggplot(aes(long, lat, group = group, fill = RHI825214)) +
+# #   geom_polygon(color = NA) +
+# #   scale_fill_gradientn(labels = scales::percent,
+# #                        guide = guide_colorbar(title.position = "top")) +
+# #   geom_polygon(data = states, mapping = aes(long, lat, group = group),
+# #                fill = NA, color = "#ffffff") +
+# #   coord_map(projection = "albers", lat0 = 39, lat1 = 45) +
+# #   theme(legend.title = element_text(),
+# #         legend.key.width = unit(.5, "in")) +
+# #   labs(fill = "Homeownership rate") +
+# #   theme_urban_map()
+# # 
+# # df1 <- joined_facts_results %>% select(subregion=County, region=State, B20004001 )
+# # 
+# # 
+# # ggplot(cleaned_facts, aes(long, lat,group = group)) + 
+# #   geom_polygon(aes(fill = RHI825214), colour = rgb(1,1,1,0.2))  +
+# #   coord_quickmap()
+
+```
+
+#Principal Component Analysis
+```{r echo=TRUE}
+#########PCA
+prin_comp <- prcomp(scaled_facts, scale. = F)
+
+pca <- summary(prin_comp)
+
+#scree plot
+plot(pca$importance[2,], xlab = "Principal Component",
+             ylab = "Proportion of Variance Explained",
+             type = "b", main="Scree Plot")
+
+#cumulative scree plot
+plot(pca$importance[3,], xlab = "Principal Component",
+              ylab = "Cumulative Proportion of Variance Explained",
+              type = "b", main="Cumulative Scree Plot")
+abline(v=10)
+abline(v=5)
+
+# Data from first 10 principal components
+pc_data <- prin_comp$x[,1:10]
+
+```
+
+Find a way to display the weights for the first few PCs. Remove rows under a certain threshold.
+
+# Logit Model Fitting to PCs
+```{r, echo=TRUE}
+
+# Fit a logit model with just non hispanic white and college dregree
+joined_facts_results$GOPDem[joined_facts_results$points_diff_rep < 0] <- 0
+joined_facts_results$GOPDem[joined_facts_results$points_diff_rep > 0] <- 1
+
+y = joined_facts_results$GOPDem
+x = scaled_facts
+link = "logit"
+
+# Train on 75% Test on 25%
+testIndexes = sample(1:nrow(x), floor(0.25 * nrow(x)))
+
+# PC FIT
+# Use the first 17 PCs to fit the model
+pc5_fit <- glm(y[-testIndexes] ~ ., data=data.frame(pc_data[-testIndexes,1:5]), family=binomial(link=link))
+pc5_predicted <- predict(pc5_fit, data.frame(pc_data[testIndexes,]), type="response")
+# Confusion Matrix
+knitr::kable(table(pred=ifelse(pc5_predicted > 0.5, 1, 0),true=y[testIndexes]))
+
+pc5_outcome = data.frame(cbind(y[testIndexes], predict(pc5_fit, data.frame(pc_data[testIndexes,1:5]), type="response")))
+colnames(pc5_outcome) = c("Truth", "Predicted")
+
+#Plot ROC Curve
+pc5_r = roc(Truth ~ Predicted, data = pc5_outcome)
+
+# Use the first 10 PCs to fit the model
+pc_fit <- glm(y[-testIndexes] ~ ., data=data.frame(pc_data[-testIndexes,]), family=binomial(link=link))
+pc_predicted <- predict(pc_fit, data.frame(pc_data[testIndexes,]), type="response")
+# Confusion Matrix
+knitr::kable(table(pred=ifelse(pc_predicted > 0.5, 1, 0),true=y[testIndexes]))
+
+pc_outcome = data.frame(cbind(y[testIndexes], predict(pc_fit, data.frame(pc_data[testIndexes,]), type="response")))
+colnames(pc_outcome) = c("Truth", "Predicted")
+
+#Plot ROC Curve
+pc_r = roc(Truth ~ Predicted, data = pc_outcome)
+
+plot(pc_r, print.auc = TRUE, col = "green", main="Logistic Regression Based on PCs")
+plot(pc5_r, print.auc = TRUE, 
+               col = "blue", print.auc.y = .6, add = TRUE)
+legend(1.5, .95, legend=c("5 PCs", "10 PCs"),
+       col=c("blue", "green"), lty = 1, cex=0.8)
+
+```
+
+
+#Multinomial Logit using PCs
+```{r}
+# First 5 PCs
+pc5_multi <- vglm(joined_facts_results$Lean[-testIndexes] ~ ., data=data.frame(pc_data[-testIndexes,1:5]), 
+                family=(multinomial))
+
+pc5_prediction = predict(pc5_multi, data.frame(pc_data[testIndexes, ]), type="response")
+knitr::kable(table(Expected=max.col(pc5_prediction),Actual=joined_facts_results$Lean[testIndexes]))
+
+pc5_outcome = data.frame(cbind(joined_facts_results$Lean[testIndexes], max.col(pc5_prediction)))
+colnames(pc5_outcome) = c("Truth", "Predicted")
+#Plot ROC Curve
+pc5_r = roc(Truth ~ Predicted, data = pc5_outcome)
+
+# First 10 PCs
+pc_multi <- vglm(joined_facts_results$Lean[-testIndexes] ~ ., data=data.frame(pc_data[-testIndexes,]), 
+                family=(multinomial))
+
+pc_prediction = predict(pc_multi, data.frame(pc_data[testIndexes, ]), type="response")
+knitr::kable(table(Expected=max.col(pc_prediction),Actual=joined_facts_results$Lean[testIndexes]))
+
+pc_outcome = data.frame(cbind(joined_facts_results$Lean[testIndexes], max.col(pc_prediction)))
+colnames(pc_outcome) = c("Truth", "Predicted")
+#Plot ROC Curve
+pc_r = roc(Truth ~ Predicted, data = pc_outcome)
+
+```
+
+
+#LDA
+```{r, echo=TRUE}
+
+lda <- lda(joined_facts_results$Lean[-testIndexes] ~ ., data = data.frame(scaled_facts[-testIndexes,]))
+str(lda)
+group_means <- lda[[3]]
+knitr::kable(group_means[,c("RHI825214", "EDU685213", "INC110213")])
+
+plot(lda$svd^2 / sum(lda$svd^2), xlab="Linear Discrimant", ylab="Proportion of Between-Class Variance Explained")
+lines(lda$svd^2 / sum(lda$svd^2))
+
+lda_predicted = predict(lda, data.frame(scaled_facts[testIndexes,]), type="response")
+
+knitr::kable(table(pred=lda_predicted[[1]],true=joined_facts_results$Lean[testIndexes]))
+
+lda_outcome = data.frame(cbind(joined_facts_results$Lean[testIndexes], lda_predicted[[1]]))
+colnames(lda_outcome) = c("Truth", "Predicted")
+
+#Plot ROC Curve
+lda_r = roc(Truth ~ Predicted, data = lda_outcome)
+
+
+plot(pc_r, print.auc = TRUE, col = "green", main="LDA Compared to Multinomial Regression")
+plot(pc5_r, print.auc = TRUE, 
+               col = "blue", print.auc.y = .6, add = TRUE)
+plot(lda_r, print.auc = TRUE, 
+               col = "red", print.auc.y = .4, add = TRUE)
+legend(1.5, .95, legend=c("5 PCs", "10 PCs", "LDA"),
+       col=c("blue", "green", "red"), lty = 1, cex=0.8)
+```
+
+
+
+
+#LDA vs PCA
+```{r}
+
+
+firstLDs = scaled_facts[testIndexes,] %*% lda$scaling[,1:2]
+firstPcs = pc_data[testIndexes,1:2]
+
+ggplot(data=data.frame(firstLDs), mapping = aes(x=LD1, y=LD2)) + geom_point(aes(color=factor(joined_facts_results$Lean[testIndexes]))) + scale_colour_manual(name = "Lean", values = c("#0000ff", "#2020df", "#4040bf", "#60609f", "#808080", "#9f6060", "#bf4040", "#df2020", "#ff0000"))
+# LDA SHOWS A SORT OF SPECTRUM FOR THE LEANS THOUGH IT IS NOT VERY WELL DEFINED
+
+ggplot(data=data.frame(firstPcs), mapping = aes(x=PC1, y=PC2)) + geom_point(aes(color=factor(joined_facts_results$Lean[testIndexes]))) + scale_colour_manual(name = "Lean", values = c("#0000ff", "#2020df", "#4040bf", "#60609f", "#808080", "#9f6060", "#bf4040", "#df2020", "#ff0000"))
+# NOTE THAT PC DOES A FAIR JOB OF SEPERATING THE DEM FROM REP BUT DOES NOT DISTINGUISH WITH THE MORE NUANCED LEANS
+
+```
+
+
+# Correlation Analysis
+```{r, echo=TRUE}
+
+cor_matrix <- cor(scaled_facts)
+
+tmp <- cor(scaled_facts)
+tmp[upper.tri(tmp)] <- 0
+diag(tmp) <- 0
+
+uncorrelated_facts <- scaled_facts[,!apply(tmp,2,function(x) any(x > 0.8))]
+
+```
+
+#Hierarchical Clustering Comparison
+```{r, echo =TRUE}
+samp = sample(testIndexes, 150)
+plot(hclust(dist(scaled_facts[samp,])^2, method="single"), main="Single Linkage",  labels=F)
+plot(hclust(dist(scaled_facts[samp,])^2, method="average"), main="Average Linkage",  labels=F)
+plot(hclust(dist(scaled_facts[samp,])^2, method="complete"), main="Complete Linkage", labels=F)
+
+# COMPLETE LINKAGE SEEMS BEST WITH SINGLE AND AVERAGE THERE SEEMS TO BE CHAINING
+
+# plot(hclust(dist(pc_data[sample(testIndexes, 150),]), method="complete"), main="Complete Linkage", labels=F)
+
+# scaled_facts[testIndexes,] %*% lda$scaling[,1:2]
+
+h = hclust(dist(pc_data[testIndexes,1:5])^2, method="complete")
+plot(h, labels=F)
+clusterCut <- cutree(h, 6)
+table(clusterCut, joined_facts_results$Lean[testIndexes])
+```
+
+
+```{r}
+c_pc = mclustBIC(pc_data[testIndexes,], G=1:20)
+plot(c_pc)
+
+# Best cluster model is k=16 VVE
+summary(c_pc)
+
+em_clusters_pc = Mclust(pc_data[testIndexes,], G=16, modelNames = "VVE")
+
+# Possibly compare the EM results to kmeans with k=10
+
+cluster_id_pc = em_clusters_pc$classification
+
+cluster_count_pc = data.frame(cluster_id_pc) %>%
+  group_by(cluster_id_pc) %>%
+  summarise(n = n())
+
+state_cluster_counts_pc = cbind(joined_facts_results[testIndexes, 1:3], cluster_id_pc) %>% 
+  group_by(state_abbreviation, cluster_id_pc) %>%
+  summarise(count = n())
+
+Lean_cluster_counts_pc = data.frame(cbind(joined_facts_results[testIndexes,], cluster_id_pc)) %>% 
+  group_by(Lean, cluster_id_pc) %>%
+  summarise(count = n())
+
+View(Lean_cluster_counts_pc)
+
+plot(jitter(cluster_id_pc), jitter(as.numeric(joined_facts_results$Lean[testIndexes])))
+
+Lean_counts = joined_facts_results[testIndexes,] %>%
+  group_by(Lean) %>%
+  summarise(count = n())
+
+merged_lean_counts_pc = merge(Lean_cluster_counts_pc, Lean_counts, by.x="Lean", by.y="Lean")
+merged_lean_counts_pc$pct = merged_lean_counts_pc$count.x / merged_lean_counts_pc$count.y
+
+plot(merged_lean_counts_pc$cluster_id, as.numeric(merged_lean_counts_pc$Lean), cex = 10 * merged_lean_counts_pc$pct, xlab = "Cluster ID", ylab = "Solid Dem to Solid GOP", main = "Percentage of Lean By Cluster Based on First 10 Pcs")
+
+```
+
+```{r}
+# Try clustering with LDs
+ld = scaled_facts[testIndexes,] %*% lda$scaling
+c = mclustBIC(ld, G=1:15)
+plot(c)
+
+# Best cluster model is k=10 VEV
+summary(c)
+
+em_clusters_ld = Mclust(ld, G=10, modelNames = "VEV")
+
+# Possibly compare the EM results to kmeans with k=10
+
+cluster_id_ld = em_clusters_ld$classification
+
+cluster_count_ld = data.frame(cluster_id_ld) %>%
+  group_by(cluster_id_ld) %>%
+  summarise(n = n())
+
+state_cluster_counts_ld = cbind(joined_facts_results[testIndexes, 1:3], cluster_id_ld) %>% 
+  group_by(state_abbreviation, cluster_id_ld) %>%
+  summarise(count = n())
+
+Lean_cluster_counts_ld = data.frame(cbind(joined_facts_results[testIndexes,], cluster_id_ld)) %>% 
+  group_by(Lean, cluster_id_ld) %>%
+  summarise(count = n())
+
+View(Lean_cluster_counts_ld)
+
+# Note that there are many more Solid GOP than Solid Dem counties
+plot(jitter(cluster_id_ld), jitter(as.numeric(joined_facts_results$Lean[testIndexes])))
+
+merged_lean_counts_ld = merge(Lean_cluster_counts_ld, Lean_counts, by.x="Lean", by.y="Lean")
+merged_lean_counts_ld$pct = merged_lean_counts_ld$count.x / merged_lean_counts_ld$count.y
+
+plot(merged_lean_counts_ld$cluster_id, as.numeric(merged_lean_counts_ld$Lean), cex = 10 * merged_lean_counts$pct, xlab = "Cluster ID", ylab = "Solid Dem to Solid GOP", main = "Percentage of Lean By Cluster")
+```
+
+
+```{r}
+# Try clustering with scaled data instead of pc
+c = mclustBIC(uncorrelated_facts[testIndexes,], G=1:15)
+plot(c)
+
+# Best cluster model is k=4 VEV
+summary(c)
+
+em_clusters = Mclust(uncorrelated_facts[testIndexes,], G=4, modelNames = "VEV")
+
+# Possibly compare the EM results to kmeans with k=10
+
+cluster_id = em_clusters$classification
+
+cluster_count = data.frame(cluster_id) %>%
+  group_by(cluster_id) %>%
+  summarise(n = n())
+
+state_cluster_counts = cbind(joined_facts_results[testIndexes, 1:3], cluster_id) %>% 
+  group_by(state_abbreviation, cluster_id) %>%
+  summarise(count = n())
+
+Lean_cluster_counts = data.frame(cbind(joined_facts_results[testIndexes,], cluster_id)) %>% 
+  group_by(Lean, cluster_id) %>%
+  summarise(count = n())
+
+View(Lean_cluster_counts)
+
+# Note that there are many more Solid GOP than Solid Dem counties
+plot(jitter(cluster_id), jitter(as.numeric(joined_facts_results$Lean[testIndexes])))
+
+merged_lean_counts = merge(Lean_cluster_counts, Lean_counts, by.x="Lean", by.y="Lean")
+merged_lean_counts$pct = merged_lean_counts$count.x / merged_lean_counts$count.y
+
+plot(merged_lean_counts$cluster_id, as.numeric(merged_lean_counts$Lean), cex = 10 * merged_lean_counts$pct, xlab = "Cluster ID", ylab = "Solid Dem to Solid GOP", main = "Percentage of Lean By Cluster")
+```
+
+
+
+
+```{r}
+# Try clustering just based on pct non hispanic White, pct college degree, per capita income
+expected_trump = scaled_facts[testIndexes, c("RHI825214", "EDU685213", "INC910213")] 
+
+trump_bic = mclustBIC(expected_trump, G=1:20)
+plot(trump_bic)
+
+# Best cluster model is k=5 VVV
+summary(trump_bic)
+
+em_trump_clusts = Mclust(expected_trump, G=5, modelNames = "VVV")
+
+cluster_id_trump = em_trump_clusts$classification
+
+cluster_count_trump = data.frame(cluster_id_trump) %>%
+  group_by(cluster_id_trump) %>%
+  summarise(n = n())
+
+state_cluster_counts_trump = cbind(joined_facts_results[testIndexes, 1:3], cluster_id_trump) %>% 
+  group_by(state_abbreviation, cluster_id_trump) %>%
+  summarise(count = n())
+
+Lean_cluster_counts_trump = data.frame(cbind(joined_facts_results[testIndexes,], cluster_id_trump)) %>% 
+  group_by(Lean, cluster_id_trump) %>%
+  summarise(count = n())
+
+merged_lean_counts_trump = merge(Lean_cluster_counts_trump, Lean_counts, by.x="Lean", by.y="Lean")
+merged_lean_counts_trump$pct = merged_lean_counts_trump$count.x / merged_lean_counts_trump$count.y
+
+plot(merged_lean_counts_trump$cluster_id, as.numeric(merged_lean_counts_trump$Lean), cex = 10 * merged_lean_counts_trump$pct, xlab = "Cluster ID", ylab = "Solid Dem to Solid GOP", main = "% of Lean By Cluster Based on % White, % College Degree, Income")
+```
